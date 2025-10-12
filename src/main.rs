@@ -1,9 +1,11 @@
-use std::io::{self, stdin};
+use std::io::stdin;
 use std::sync::LazyLock;
 use std::path::PathBuf;
 use std::fs;
 
 use clap::Parser;
+
+mod lexer;
 
 /// A compiler for kLang
 #[derive(Debug, Parser)]
@@ -63,18 +65,20 @@ static ARGS: LazyLock<Args> = LazyLock::new(|| Args::parse());
 static LOG: LazyLock<Log> = LazyLock::new(|| Log::from_args(&*ARGS));
 
 fn main() {
-    LOG.debug(&format!("{:?}", *ARGS));
+    LOG.debug(&format!("{:?}\n", *ARGS));
 
-    let lines = if let Some(fp) = &ARGS.path {
+    let inp_string = if let Some(fp) = &ARGS.path {
         fs::read_to_string(fp).expect("Please provide a valid file path")
     } else {
         let mut st = String::new();
-        stdin().lines().for_each(|i| if let Ok(s) = i {st.push_str(s.as_str())});
+        stdin().lines().for_each(|i| if let Ok(s) = i {st.push_str(s.as_str()); st.push('\n')});
         st
-    }; let lines = lines.lines();
+    };
 
-    LOG.debug("Got input:\n");
-    LOG.debug(&format!("{lines:?}"));
+    LOG.debug("Got input:\n\n```kLang");
+    LOG.debug(&format!("{inp_string}\n```\n"));
+
+    let tokenstream = lexer::lex_string(inp_string);
 
     todo!("AST parsing!");
 }
