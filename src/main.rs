@@ -80,5 +80,7 @@ fn main() {
 
     let tokenstream = lexer::lex_string(inp_string);
 
+    LOG.debug(&format!("Lexed:\n\n{:?}", &tokenstream));
+
     todo!("AST parsing!");
 }

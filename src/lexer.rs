@@ -1,3 +1,5 @@
+use std::char;
+
 #[allow(dead_code)]
 #[derive(Debug)]
 pub enum Token {
@@ -199,20 +201,20 @@ pub fn lex_string(inp_str: String) -> Vec<DataToken> {
                         if ct == &'i' {
                             chars.next();
                             char_idx += 1;
-                            if chars.next() == Some('1') && chars.next() == Some('6') {
+                            if chars.peek() == Some(&'1') { chars.next(); if chars.next() == Some('6') {
                                 char_idx += 2;
-                                tokens.push(DataToken::new(Token::LitI16(i16::from_str_radix(&buf, 16).expect(&format!("i32 literal likely out of range at {:?}", pos))), pos));
-                            } else if chars.next() == Some('3') && chars.next() == Some('2') {
+                                tokens.push(DataToken::new(Token::LitI16(i16::from_str_radix(&buf, 16).expect(&format!("i16 literal likely out of range at {:?}", pos))), pos));
+                            }} else if chars.peek() == Some(&'3') { chars.next(); if chars.next() == Some('2') {
                                 char_idx += 2;
                                 tokens.push(DataToken::new(Token::LitI32(i32::from_str_radix(&buf, 16).expect(&format!("i32 literal likely out of range at {:?}", pos))), pos));
-                            } else {
+                            }} else {
                                 panic!("integer literal types are `i16` and `i32`, error at {:?}", (line_idx, char_idx-1))
                             }
                             break
                         } else if ct == &'b' {
                             chars.next();
                             char_idx += 1;
-                            if !(chars.next() == Some('y') && chars.next() == Some('t') && chars.next() == Some('t')) {panic!("You might have meant `byte` at {:?}", (line_idx, char_idx))}
+                            if !(chars.next() == Some('y') && chars.next() == Some('t') && chars.next() == Some('e')) {panic!("You might have meant `byte` at {:?}", (line_idx, char_idx))}
                             char_idx += 3;
                             tokens.push(DataToken::new(Token::LitByte(u8::from_str_radix(&buf, 16).expect(&format!("Byte literal likely out of range at {:?}", pos))), pos));
                             break
@@ -221,6 +223,44 @@ pub fn lex_string(inp_str: String) -> Vec<DataToken> {
                 }
             } else {
                 let mut buf = String::from(c);
+
+                if let Some(ct) = chars.peek() {
+                    if ct == &'i' {
+                        chars.next();
+                        char_idx += 1;
+                        if chars.peek() == Some(&'1') { chars.next(); if chars.next() == Some('6') {
+                            char_idx += 2;
+                            tokens.push(DataToken::new(Token::LitI16(i16::from_str_radix(&buf, 10).expect(&format!("i16 literal likely out of range at {:?}", pos))), pos));
+                        }} else if chars.peek() == Some(&'3') { chars.next(); if chars.next() == Some('2') {
+                            char_idx += 2;
+                            tokens.push(DataToken::new(Token::LitI32(i32::from_str_radix(&buf, 10).expect(&format!("i32 literal likely out of range at {:?}", pos))), pos));
+                        }} else {
+                            panic!("integer literal types are `i16` and `i32`, error at {:?}", (line_idx, char_idx-1))
+                        }
+                        continue
+                    } else if ct == &'f' {
+                        chars.next();
+                        char_idx += 1;
+                        if chars.peek() == Some(&'3') { chars.next(); if chars.next() == Some('3') {
+                            char_idx += 2;
+                            tokens.push(DataToken::new(Token::LitF32(buf.parse::<f32>().expect(&format!("f32 literal likely out of range at {:?}", pos))), pos));
+                        }} else if chars.peek() == Some(&'6') { chars.next(); if chars.next() == Some('4') {
+                            char_idx += 2;
+                            tokens.push(DataToken::new(Token::LitF64(buf.parse::<f64>().expect(&format!("f64 literal likely out of range at {:?}", pos))), pos));
+                        }} else {
+                            panic!("floating point literal types are `f32` and `i64`, error at {:?}", (line_idx, char_idx-1))
+                        }
+                        continue
+                    } else if ct == &'b' {
+                        chars.next();
+                        char_idx += 1;
+                        if !(chars.next() == Some('y') && chars.next() == Some('t') && chars.next() == Some('e')) {panic!("You might have meant `byte` at {:?}", (line_idx, char_idx))}
+                        char_idx += 3;
+                        tokens.push(DataToken::new(Token::LitByte(u8::from_str_radix(&buf, 10).expect(&format!("Byte literal likely out of range at {:?}", pos))), pos));
+                        continue
+                    }
+                }
+
                 while let Some(cs) = chars.next() {
                     char_idx += 1;
                     if cs.is_ascii_digit() {
@@ -238,33 +278,33 @@ pub fn lex_string(inp_str: String) -> Vec<DataToken> {
                         if ct == &'i' {
                             chars.next();
                             char_idx += 1;
-                            if chars.next() == Some('1') && chars.next() == Some('6') {
+                            if chars.peek() == Some(&'1') { chars.next(); if chars.next() == Some('6') {
                                 char_idx += 2;
-                                tokens.push(DataToken::new(Token::LitI16(i16::from_str_radix(&buf, 10).expect(&format!("i32 literal likely out of range at {:?}", pos))), pos));
-                            } else if chars.next() == Some('3') && chars.next() == Some('2') {
+                                tokens.push(DataToken::new(Token::LitI16(i16::from_str_radix(&buf, 10).expect(&format!("i16 literal likely out of range at {:?}", pos))), pos));
+                            }} else if chars.peek() == Some(&'3') { chars.next(); if chars.next() == Some('2') {
                                 char_idx += 2;
                                 tokens.push(DataToken::new(Token::LitI32(i32::from_str_radix(&buf, 10).expect(&format!("i32 literal likely out of range at {:?}", pos))), pos));
-                            } else {
+                            }} else {
                                 panic!("integer literal types are `i16` and `i32`, error at {:?}", (line_idx, char_idx-1))
                             }
                             break
                         } else if ct == &'f' {
                             chars.next();
                             char_idx += 1;
-                            if chars.next() == Some('1') && chars.next() == Some('6') {
+                            if chars.peek() == Some(&'3') { chars.next(); if chars.next() == Some('3') {
                                 char_idx += 2;
                                 tokens.push(DataToken::new(Token::LitF32(buf.parse::<f32>().expect(&format!("f32 literal likely out of range at {:?}", pos))), pos));
-                            } else if chars.next() == Some('3') && chars.next() == Some('2') {
+                            }} else if chars.peek() == Some(&'6') { chars.next(); if chars.next() == Some('4') {
                                 char_idx += 2;
                                 tokens.push(DataToken::new(Token::LitF64(buf.parse::<f64>().expect(&format!("f64 literal likely out of range at {:?}", pos))), pos));
-                            } else {
+                            }} else {
                                 panic!("floating point literal types are `f32` and `i64`, error at {:?}", (line_idx, char_idx-1))
                             }
                             break
                         } else if ct == &'b' {
                             chars.next();
                             char_idx += 1;
-                            if !(chars.next() == Some('y') && chars.next() == Some('t') && chars.next() == Some('t')) {panic!("You might have meant `byte` at {:?}", (line_idx, char_idx))}
+                            if !(chars.next() == Some('y') && chars.next() == Some('t') && chars.next() == Some('e')) {panic!("You might have meant `byte` at {:?}", (line_idx, char_idx))}
                             char_idx += 3;
                             tokens.push(DataToken::new(Token::LitByte(u8::from_str_radix(&buf, 10).expect(&format!("Byte literal likely out of range at {:?}", pos))), pos));
                             break
