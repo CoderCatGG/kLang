@@ -327,6 +327,11 @@ pub fn lex_string(inp_str: String) -> Vec<DataToken> {
                             match chars.next() {
                                 Some('n') => buf.push('\n'),
                                 Some('t') => buf.push('\t'),
+                                Some('0') => buf.push('\0'),
+                                Some('r') => buf.push('\r'),
+                                Some('"') => buf.push('"'),
+                                Some('\\') => buf.push('\\'),
+                                Some('3') => buf.push('\x03'),
                                 _ => panic!("Invalid escape sequence at {:?}", (line_idx, char_idx))
                             }
                         }
