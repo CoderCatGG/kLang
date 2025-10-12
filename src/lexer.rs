@@ -1,3 +1,40 @@
+use std::fmt::Display;
+use std::error::Error;
+
+#[derive(Debug)]
+pub struct LexError {
+    pos: (usize, usize),
+    reason: LexErrorReason,
+}
+
+impl LexError {
+    fn new<T>(pos: (usize, usize), reason: LexErrorReason) -> Result<T, LexError> {
+        Err(LexError {
+            pos,
+            reason,
+        })
+    }
+}
+
+impl Display for LexError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Lexing error at {:?}: {:?}", self.pos, self.reason)
+    }
+}
+
+impl Error for LexError {}
+
+#[derive(Debug)]
+enum LexErrorReason {
+    HexadecimalFloat,
+    LiteralTypeSpecifierMissing,
+    IdentifierStartsWithNumber,
+    InvalidIntegerType,
+    InvalidFloatingPointType,
+    MisspelledType,
+    UnexpectedCharacter,
+}
+
 #[allow(dead_code)]
 #[derive(Debug)]
 pub enum Token {
@@ -70,7 +107,7 @@ impl DataToken {
     }
 }
 
-pub fn lex_string(inp_str: String) -> Vec<DataToken> {
+pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
     let mut tokens = Vec::new();
 
     let mut chars = inp_str.chars().peekable();
@@ -188,11 +225,11 @@ pub fn lex_string(inp_str: String) -> Vec<DataToken> {
                         buf.push(cs)
                     } else if cs == '_' {
                     } else if cs == '.' {
-                        panic!("No float literals may be prefixed with `0x`, error at {:?}", (line_idx, char_idx))
+                        return LexError::new((line_idx, char_idx), LexErrorReason::HexadecimalFloat)
                     } else if cs == ';' {
-                        panic!("You need to specify a hexadecimal compatible literal type, try appending `byte`, `i16`, `i32`, error at {:?}", pos)
+                        return LexError::new(pos, LexErrorReason::LiteralTypeSpecifierMissing)
                     } else {
-                        panic!("`0x` is reserved for hexadecimal numbers, error at {:?}", pos)
+                        return LexError::new(pos, LexErrorReason::IdentifierStartsWithNumber)
                     }
 
                     if let Some(ct) = chars.peek() {
@@ -206,13 +243,13 @@ pub fn lex_string(inp_str: String) -> Vec<DataToken> {
                                 char_idx += 2;
                                 tokens.push(DataToken::new(Token::LitI32(i32::from_str_radix(&buf, 16).expect(&format!("i32 literal likely out of range at {:?}", pos))), pos));
                             }} else {
-                                panic!("integer literal types are `i16` and `i32`, error at {:?}", (line_idx, char_idx-1))
+                                return LexError::new(pos, LexErrorReason::InvalidIntegerType)
                             }
                             break
                         } else if ct == &'b' {
                             chars.next();
                             char_idx += 1;
-                            if !(chars.next() == Some('y') && chars.next() == Some('t') && chars.next() == Some('e')) {panic!("You might have meant `byte` at {:?}", (line_idx, char_idx))}
+                            if !(chars.next() == Some('y') && chars.next() == Some('t') && chars.next() == Some('e')) {return LexError::new((line_idx, char_idx), LexErrorReason::MisspelledType)}
                             char_idx += 3;
                             tokens.push(DataToken::new(Token::LitByte(u8::from_str_radix(&buf, 16).expect(&format!("Byte literal likely out of range at {:?}", pos))), pos));
                             break
@@ -233,7 +270,7 @@ pub fn lex_string(inp_str: String) -> Vec<DataToken> {
                             char_idx += 2;
                             tokens.push(DataToken::new(Token::LitI32(i32::from_str_radix(&buf, 10).expect(&format!("i32 literal likely out of range at {:?}", pos))), pos));
                         }} else {
-                            panic!("integer literal types are `i16` and `i32`, error at {:?}", (line_idx, char_idx-1))
+                            return LexError::new(pos, LexErrorReason::InvalidIntegerType)
                         }
                         continue
                     } else if ct == &'f' {
@@ -246,13 +283,13 @@ pub fn lex_string(inp_str: String) -> Vec<DataToken> {
                             char_idx += 2;
                             tokens.push(DataToken::new(Token::LitF64(buf.parse::<f64>().expect(&format!("f64 literal likely out of range at {:?}", pos))), pos));
                         }} else {
-                            panic!("floating point literal types are `f32` and `i64`, error at {:?}", (line_idx, char_idx-1))
+                            return LexError::new(pos, LexErrorReason::InvalidFloatingPointType)
                         }
                         continue
                     } else if ct == &'b' {
                         chars.next();
                         char_idx += 1;
-                        if !(chars.next() == Some('y') && chars.next() == Some('t') && chars.next() == Some('e')) {panic!("You might have meant `byte` at {:?}", (line_idx, char_idx))}
+                        if !(chars.next() == Some('y') && chars.next() == Some('t') && chars.next() == Some('e')) {return LexError::new((line_idx, char_idx), LexErrorReason::MisspelledType)}
                         char_idx += 3;
                         tokens.push(DataToken::new(Token::LitByte(u8::from_str_radix(&buf, 10).expect(&format!("Byte literal likely out of range at {:?}", pos))), pos));
                         continue
@@ -267,9 +304,9 @@ pub fn lex_string(inp_str: String) -> Vec<DataToken> {
                     } else if cs == '.' {
                         buf.push('.')
                     } else if cs == ';' {
-                        panic!("You need to specify literal types, try appending `byte`, `i16`, `i32`, `f32` or `f64`, error at {:?}", pos)
+                        return LexError::new(pos, LexErrorReason::LiteralTypeSpecifierMissing)
                     } else {
-                        panic!("You cannot prefix an identifier with a number, error at: {:?}", pos)
+                        return LexError::new(pos, LexErrorReason::IdentifierStartsWithNumber)
                     }
 
                     if let Some(ct) = chars.peek() {
@@ -283,7 +320,7 @@ pub fn lex_string(inp_str: String) -> Vec<DataToken> {
                                 char_idx += 2;
                                 tokens.push(DataToken::new(Token::LitI32(i32::from_str_radix(&buf, 10).expect(&format!("i32 literal likely out of range at {:?}", pos))), pos));
                             }} else {
-                                panic!("integer literal types are `i16` and `i32`, error at {:?}", (line_idx, char_idx-1))
+                                return LexError::new(pos, LexErrorReason::InvalidIntegerType)
                             }
                             break
                         } else if ct == &'f' {
@@ -296,13 +333,13 @@ pub fn lex_string(inp_str: String) -> Vec<DataToken> {
                                 char_idx += 2;
                                 tokens.push(DataToken::new(Token::LitF64(buf.parse::<f64>().expect(&format!("f64 literal likely out of range at {:?}", pos))), pos));
                             }} else {
-                                panic!("floating point literal types are `f32` and `i64`, error at {:?}", (line_idx, char_idx-1))
+                                return LexError::new(pos, LexErrorReason::InvalidFloatingPointType)
                             }
                             break
                         } else if ct == &'b' {
                             chars.next();
                             char_idx += 1;
-                            if !(chars.next() == Some('y') && chars.next() == Some('t') && chars.next() == Some('e')) {panic!("You might have meant `byte` at {:?}", (line_idx, char_idx))}
+                            if !(chars.next() == Some('y') && chars.next() == Some('t') && chars.next() == Some('e')) {return LexError::new((line_idx, char_idx), LexErrorReason::MisspelledType)}
                             char_idx += 3;
                             tokens.push(DataToken::new(Token::LitByte(u8::from_str_radix(&buf, 10).expect(&format!("Byte literal likely out of range at {:?}", pos))), pos));
                             break
@@ -377,9 +414,9 @@ pub fn lex_string(inp_str: String) -> Vec<DataToken> {
                     _ => tokens.push(DataToken::new(Token::Identifier(buf), pos))
                 }
             },
-            _ => panic!("Error in input:\nUnexpected character (`{c}`) at {:?}", pos)
+            _ => return LexError::new(pos, LexErrorReason::UnexpectedCharacter)
         }
     }
 
-    tokens
+    Ok(tokens)
 }

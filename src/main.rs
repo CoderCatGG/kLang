@@ -6,6 +6,7 @@ use std::fs;
 use clap::Parser;
 
 mod lexer;
+mod parser;
 
 /// A compiler for kLang
 #[derive(Debug, Parser)]
@@ -78,7 +79,13 @@ fn main() {
     LOG.debug("Got input:\n\n```kLang");
     LOG.debug(&format!("{inp_string}\n```\n"));
 
-    let tokenstream = lexer::lex_string(inp_string);
+    let tokenstream = match lexer::lex_string(inp_string) {
+        Ok(tks) => tks,
+        Err(e) => {
+            LOG.surface(&format!("{e}"));
+            std::process::exit(1);
+        }
+    };
 
     LOG.debug(&format!("Lexed:\n\n{:?}", &tokenstream));
 
