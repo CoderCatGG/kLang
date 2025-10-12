@@ -82,7 +82,7 @@ pub fn lex_string(inp_str: String) -> Vec<DataToken> {
         char_idx += 1;
 
         let pos = (line_idx, char_idx);
-        super::LOG.debug(&format!("Parsing char {:?}: {:?}", c, pos));
+        // super::LOG.debug(&format!("Parsing char {:?}: {:?}", c, pos));
 
         if c.is_whitespace() {
             if c == '\n' {
