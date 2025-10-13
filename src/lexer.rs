@@ -126,6 +126,7 @@ pub enum Token {
     Async,
     Import,
     Identifier(String),
+    EOF,
 }
 
 #[allow(dead_code)]
@@ -486,5 +487,6 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
         }
     }
 
+    tokens.push(DataToken::new(Token::EOF, (0, 0)));
     Ok(tokens)
 }

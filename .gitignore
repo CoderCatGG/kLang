@@ -17,6 +17,7 @@ kLang
 # test files for testing, change too frequently
 example/*-test.kLang
 
-# old versions of the parser, to varying success
+# old versions of the lexer/parser, to varying success
 src/ast.rs
 src/s2set.rs
+src/parser/simple.rs
