@@ -87,7 +87,19 @@ fn main() {
         }
     };
 
-    LOG.debug(&format!("Lexed:\n\n{:?}", &tokenstream));
+    LOG.debug(&format!("Lexed:\n\n{:?}\n", &tokenstream));
+
+    std::process::exit(0);
+
+    let ast = match parser::parse_tokens(tokenstream) {
+        Ok(ast) => ast,
+        Err(e) => {
+            LOG.surface(&format!("{e}"));
+            std::process::exit(1);
+        }
+    };
+
+    // LOG.debug(&format!("Parsed:\n\n{:?}\n", &ast));
 
     todo!("AST parsing!");
 }

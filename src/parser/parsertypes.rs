@@ -103,7 +103,7 @@ pub struct MemberExpr {
     member: Identifier,
 }
 
-enum FlowExpr {
+pub enum FlowExpr {
     Return {
         expression: Expr,
     },

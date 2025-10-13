@@ -1,5 +1,6 @@
 use std::fmt::Display;
 use std::error::Error;
+use std::num::{IntErrorKind, ParseFloatError, ParseIntError};
 
 #[derive(Debug)]
 pub struct LexError {
@@ -13,6 +14,29 @@ impl LexError {
             pos,
             reason,
         })
+    }
+
+    fn from_parse<T>(pos: (usize, usize), value: Result<T, ParseIntError>) -> Result<T, LexError> {
+        if let Err(e) = value {
+            match e.kind() {
+                IntErrorKind::PosOverflow | IntErrorKind::NegOverflow => return LexError::new(pos, LexErrorReason::LiteralOutOfRange),
+                _ => return LexError::new(pos, LexErrorReason::UnexpectedCharacter)
+            }
+        } else if let Ok(v) = value {
+            return Ok(v)
+        } else {
+            return Err(LexError { pos, reason: LexErrorReason::UnexpectedCharacter })
+        }
+    }
+
+    fn from_parsef<T>(pos: (usize, usize), value: Result<T, ParseFloatError>) -> Result<T, LexError> {
+        if let Err(_) = value {
+            return LexError::new(pos, LexErrorReason::LiteralOutOfRange)
+        } else if let Ok(v) = value {
+            return Ok(v)
+        } else {
+            return LexError::new(pos, LexErrorReason::UnexpectedCharacter)
+        }
     }
 }
 
@@ -32,7 +56,9 @@ enum LexErrorReason {
     InvalidIntegerType,
     InvalidFloatingPointType,
     MisspelledType,
+    LiteralOutOfRange,
     UnexpectedCharacter,
+    InvalidEscapeSequence,
 }
 
 #[allow(dead_code)]
@@ -238,10 +264,12 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
                             char_idx += 1;
                             if chars.peek() == Some(&'1') { chars.next(); if chars.next() == Some('6') {
                                 char_idx += 2;
-                                tokens.push(DataToken::new(Token::LitI16(i16::from_str_radix(&buf, 16).expect(&format!("i16 literal likely out of range at {:?}", pos))), pos));
+                                let v = LexError::from_parse(pos, i16::from_str_radix(&buf, 16))?;
+                                tokens.push(DataToken::new(Token::LitI16(v), pos));
                             }} else if chars.peek() == Some(&'3') { chars.next(); if chars.next() == Some('2') {
                                 char_idx += 2;
-                                tokens.push(DataToken::new(Token::LitI32(i32::from_str_radix(&buf, 16).expect(&format!("i32 literal likely out of range at {:?}", pos))), pos));
+                                let v = LexError::from_parse(pos, i32::from_str_radix(&buf, 16))?;
+                                tokens.push(DataToken::new(Token::LitI32(v), pos));
                             }} else {
                                 return LexError::new(pos, LexErrorReason::InvalidIntegerType)
                             }
@@ -251,7 +279,8 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
                             char_idx += 1;
                             if !(chars.next() == Some('y') && chars.next() == Some('t') && chars.next() == Some('e')) {return LexError::new((line_idx, char_idx), LexErrorReason::MisspelledType)}
                             char_idx += 3;
-                            tokens.push(DataToken::new(Token::LitByte(u8::from_str_radix(&buf, 16).expect(&format!("Byte literal likely out of range at {:?}", pos))), pos));
+                            let v = LexError::from_parse(pos, u8::from_str_radix(&buf, 16))?;
+                            tokens.push(DataToken::new(Token::LitByte(v), pos));
                             break
                         }
                     }
@@ -265,10 +294,12 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
                         char_idx += 1;
                         if chars.peek() == Some(&'1') { chars.next(); if chars.next() == Some('6') {
                             char_idx += 2;
-                            tokens.push(DataToken::new(Token::LitI16(i16::from_str_radix(&buf, 10).expect(&format!("i16 literal likely out of range at {:?}", pos))), pos));
+                            let v = LexError::from_parse(pos, i16::from_str_radix(&buf, 10))?;
+                            tokens.push(DataToken::new(Token::LitI16(v), pos));
                         }} else if chars.peek() == Some(&'3') { chars.next(); if chars.next() == Some('2') {
                             char_idx += 2;
-                            tokens.push(DataToken::new(Token::LitI32(i32::from_str_radix(&buf, 10).expect(&format!("i32 literal likely out of range at {:?}", pos))), pos));
+                            let v = LexError::from_parse(pos, i32::from_str_radix(&buf, 10))?;
+                            tokens.push(DataToken::new(Token::LitI32(v), pos));
                         }} else {
                             return LexError::new(pos, LexErrorReason::InvalidIntegerType)
                         }
@@ -278,10 +309,12 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
                         char_idx += 1;
                         if chars.peek() == Some(&'3') { chars.next(); if chars.next() == Some('3') {
                             char_idx += 2;
-                            tokens.push(DataToken::new(Token::LitF32(buf.parse::<f32>().expect(&format!("f32 literal likely out of range at {:?}", pos))), pos));
+                            let v = LexError::from_parsef(pos, buf.parse::<f32>())?;
+                            tokens.push(DataToken::new(Token::LitF32(v), pos));
                         }} else if chars.peek() == Some(&'6') { chars.next(); if chars.next() == Some('4') {
                             char_idx += 2;
-                            tokens.push(DataToken::new(Token::LitF64(buf.parse::<f64>().expect(&format!("f64 literal likely out of range at {:?}", pos))), pos));
+                            let v = LexError::from_parsef(pos, buf.parse::<f64>())?;
+                            tokens.push(DataToken::new(Token::LitF64(v), pos));
                         }} else {
                             return LexError::new(pos, LexErrorReason::InvalidFloatingPointType)
                         }
@@ -291,7 +324,8 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
                         char_idx += 1;
                         if !(chars.next() == Some('y') && chars.next() == Some('t') && chars.next() == Some('e')) {return LexError::new((line_idx, char_idx), LexErrorReason::MisspelledType)}
                         char_idx += 3;
-                        tokens.push(DataToken::new(Token::LitByte(u8::from_str_radix(&buf, 10).expect(&format!("Byte literal likely out of range at {:?}", pos))), pos));
+                        let v = LexError::from_parse(pos, u8::from_str_radix(&buf, 10))?;
+                        tokens.push(DataToken::new(Token::LitByte(v), pos));
                         continue
                     }
                 }
@@ -315,10 +349,12 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
                             char_idx += 1;
                             if chars.peek() == Some(&'1') { chars.next(); if chars.next() == Some('6') {
                                 char_idx += 2;
-                                tokens.push(DataToken::new(Token::LitI16(i16::from_str_radix(&buf, 10).expect(&format!("i16 literal likely out of range at {:?}", pos))), pos));
+                                let v = LexError::from_parse(pos, i16::from_str_radix(&buf, 10))?;
+                                tokens.push(DataToken::new(Token::LitI16(v), pos));
                             }} else if chars.peek() == Some(&'3') { chars.next(); if chars.next() == Some('2') {
                                 char_idx += 2;
-                                tokens.push(DataToken::new(Token::LitI32(i32::from_str_radix(&buf, 10).expect(&format!("i32 literal likely out of range at {:?}", pos))), pos));
+                                let v = LexError::from_parse(pos, i32::from_str_radix(&buf, 10))?;
+                                tokens.push(DataToken::new(Token::LitI32(v), pos));
                             }} else {
                                 return LexError::new(pos, LexErrorReason::InvalidIntegerType)
                             }
@@ -328,10 +364,12 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
                             char_idx += 1;
                             if chars.peek() == Some(&'3') { chars.next(); if chars.next() == Some('3') {
                                 char_idx += 2;
-                                tokens.push(DataToken::new(Token::LitF32(buf.parse::<f32>().expect(&format!("f32 literal likely out of range at {:?}", pos))), pos));
+                                let v = LexError::from_parsef(pos, buf.parse::<f32>())?;
+                                tokens.push(DataToken::new(Token::LitF32(v), pos));
                             }} else if chars.peek() == Some(&'6') { chars.next(); if chars.next() == Some('4') {
                                 char_idx += 2;
-                                tokens.push(DataToken::new(Token::LitF64(buf.parse::<f64>().expect(&format!("f64 literal likely out of range at {:?}", pos))), pos));
+                                let v = LexError::from_parsef(pos, buf.parse::<f64>())?;
+                                tokens.push(DataToken::new(Token::LitF64(v), pos));
                             }} else {
                                 return LexError::new(pos, LexErrorReason::InvalidFloatingPointType)
                             }
@@ -341,16 +379,16 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
                             char_idx += 1;
                             if !(chars.next() == Some('y') && chars.next() == Some('t') && chars.next() == Some('e')) {return LexError::new((line_idx, char_idx), LexErrorReason::MisspelledType)}
                             char_idx += 3;
-                            tokens.push(DataToken::new(Token::LitByte(u8::from_str_radix(&buf, 10).expect(&format!("Byte literal likely out of range at {:?}", pos))), pos));
+                            let v = LexError::from_parse(pos, u8::from_str_radix(&buf, 10))?;
+                            tokens.push(DataToken::new(Token::LitByte(v), pos));
                             break
                         }
                     }
                 }
             },
-            '"' => {
-                chars.next();
+            '"' => if let Some(cr) = chars.next() {
                 char_idx += 1;
-                let mut buf = String::from(c);
+                let mut buf = String::from(cr);
                 while let Some(cs) = chars.next() {
                     char_idx += 1;
                     match cs {
@@ -369,7 +407,7 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
                                 Some('"') => buf.push('"'),
                                 Some('\\') => buf.push('\\'),
                                 Some('3') => buf.push('\x03'),
-                                _ => panic!("Invalid escape sequence at {:?}", (line_idx, char_idx))
+                                _ => return LexError::new((line_idx, char_idx), LexErrorReason::InvalidEscapeSequence),
                             }
                         }
                         _ => buf.push(cs)
@@ -379,6 +417,16 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
             },
             'a'..='z' | 'A'..='Z' | '_' => {
                 let mut buf = String::from(c);
+                if let Some(cs) = chars.peek() {
+                    match cs {
+                        &('a'..='z') | &('A'..='Z') | &('0'..='9') | &'_' => {},
+                        _ => {
+                            super::LOG.explicit(&format!("Detected single character literal (consider using a more descriptive name) at: {:?}", pos));
+                            tokens.push(DataToken::new(Token::Identifier(c.to_string()), pos));
+                            continue
+                        }
+                    }
+                }
                 while let Some(cs) = chars.next() {
                     char_idx += 1;
                     buf.push(cs);
