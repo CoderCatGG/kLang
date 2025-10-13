@@ -11,8 +11,6 @@ target
 # Contains mutation testing data
 **/mutants.out*/
 
-flake.lock
-
 # A symlink for fast execution
 kLang
 
