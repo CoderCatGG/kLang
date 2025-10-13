@@ -93,7 +93,7 @@ pub enum Token {
     Mut,
     TypeSeperator,
     Type,
-    Function,
+    Func,
     Const,
     OutputSpecifier,
     Macro,
@@ -146,6 +146,77 @@ impl DataToken {
     }
 }
 
+macro_rules! push {
+    ($tok:ident, $s:ident, $p:expr) => {
+        $s.push(DataToken::new(Token::$tok, $p))
+    };
+}
+
+macro_rules! push_adv {
+    ($case:literal, $true:ident, $fallback:ident, $c:ident, $s:ident, $p:expr, $i:ident) => {
+        if $c.peek() == Some(&$case) {
+            $c.next(); $i += 1;
+            $s.push(DataToken::new(Token::$true, $p));
+        } else {
+            $s.push(DataToken::new(Token::$fallback, $p));
+        }
+    };
+}
+
+macro_rules! handle_int_byte_conversion {
+    ($buf:expr, $radix:expr, $c:ident, $s:ident, $p:expr, $i:ident, $flow:stmt) => {
+        if let Some(ct) = $c.peek() {
+            if ct == &'i' {
+                $c.next();
+                $i += 1;
+                if $c.peek() == Some(&'1') { $c.next(); if $c.next() == Some('6') {
+                    $i += 2;
+                    let v = LexError::from_parse($p, i16::from_str_radix(&$buf, $radix))?;
+                    $s.push(DataToken::new(Token::LitI16(v), $p));
+                }} else if $c.peek() == Some(&'3') { $c.next(); if $c.next() == Some('2') {
+                    $i += 2;
+                    let v = LexError::from_parse($p, i32::from_str_radix(&$buf, $radix))?;
+                    $s.push(DataToken::new(Token::LitI32(v), $p));
+                }} else {
+                    return LexError::new($p, LexErrorReason::InvalidIntegerType)
+                }
+                $flow
+            } else if ct == &'b' {
+                $c.next();
+                $i += 1;
+                if !($c.next() == Some('y') && $c.next() == Some('t') && $c.next() == Some('e')) {return LexError::new($p, LexErrorReason::MisspelledType)}
+                $i += 3;
+                let v = LexError::from_parse($p, u8::from_str_radix(&$buf, $radix))?;
+                $s.push(DataToken::new(Token::LitByte(v), $p));
+                $flow
+            }
+        }
+    };
+}
+
+macro_rules! handle_float_conversion {
+    ($buf:expr, $c:ident, $s:ident, $p:expr, $i:ident, $flow:stmt) => {
+        if let Some(ct) = $c.peek() {
+            if ct == &'f' {
+                $c.next();
+                $i += 1;
+                if $c.peek() == Some(&'3') { $c.next(); if $c.next() == Some('2') {
+                    $i += 2;
+                    let v = LexError::from_parsef($p, $buf.parse::<f32>())?;
+                    $s.push(DataToken::new(Token::LitF32(v), $p));
+                }} else if $c.peek() == Some(&'6') { $c.next(); if $c.next() == Some('4') {
+                    $i += 2;
+                    let v = LexError::from_parsef($p, $buf.parse::<f64>())?;
+                    $s.push(DataToken::new(Token::LitF64(v), $p));
+                }} else {
+                    return LexError::new($p, LexErrorReason::InvalidFloatingPointType)
+                }
+                $flow
+            }
+        }
+    };
+}
+
 pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
     let mut tokens = Vec::new();
 
@@ -158,7 +229,9 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
         char_idx += 1;
 
         let pos = (line_idx, char_idx);
-        // super::LOG.debug(&format!("Parsing char {:?}: {:?}", c, pos));
+        
+        #[cfg(feature = "super_explicit")]
+        super::LOG.debug(&format!("Parsing char {:?}: {:?}", c, pos));
 
         if c.is_whitespace() {
             if c == '\n' {
@@ -169,68 +242,26 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
         }
 
         match c {
-            '(' => tokens.push(DataToken::new(Token::ParenthesesBegin, pos)),
-            ')' => tokens.push(DataToken::new(Token::ParenthesesEnd, pos)),
-            '[' => tokens.push(DataToken::new(Token::BracketsBegin, pos)),
-            ']' => tokens.push(DataToken::new(Token::BracketsEnd, pos)),
-            '{' => tokens.push(DataToken::new(Token::BracesBegin, pos)),
-            '}' => tokens.push(DataToken::new(Token::BracesEnd, pos)),
-            ';' => tokens.push(DataToken::new(Token::Terminator, pos)),
-            '+' => tokens.push(DataToken::new(Token::Plus, pos)),
-            '*' => tokens.push(DataToken::new(Token::Star, pos)),
-            '.' => tokens.push(DataToken::new(Token::Dot, pos)),
-            '?' => tokens.push(DataToken::new(Token::Logical, pos)),
-            ':' => tokens.push(DataToken::new(Token::TypeSeperator, pos)),
-            '$' => tokens.push(DataToken::new(Token::Quote, pos)),
-            '=' => if chars.peek() == Some(&'=') {
-                chars.next();
-                tokens.push(DataToken::new(Token::Equals, pos));
-                char_idx += 1;
-            } else {
-                tokens.push(DataToken::new(Token::Assign, pos));
-            },
-            '!' => if chars.peek() == Some(&'=') {
-                chars.next();
-                tokens.push(DataToken::new(Token::NotEquals, pos));
-                char_idx += 1;
-            } else {
-                tokens.push(DataToken::new(Token::Not, pos));
-            },
-            '>' => if chars.peek() == Some(&'=') {
-                chars.next();
-                tokens.push(DataToken::new(Token::GreaterEquals, pos));
-                char_idx += 1;
-            } else {
-                tokens.push(DataToken::new(Token::GreaterThan, pos));
-            },
-            '<' => if chars.peek() == Some(&'=') {
-                chars.next();
-                tokens.push(DataToken::new(Token::LesserEquals, pos));
-                char_idx += 1;
-            } else {
-                tokens.push(DataToken::new(Token::LesserThan, pos));
-            },
-            '-' => if chars.peek() == Some(&'>') {
-                chars.next();
-                tokens.push(DataToken::new(Token::OutputSpecifier, pos));
-                char_idx += 1;
-            } else {
-                tokens.push(DataToken::new(Token::Minus, pos));
-            },
-            '&' => if chars.peek() == Some(&'&') {
-                chars.next();
-                tokens.push(DataToken::new(Token::And, pos));
-                char_idx += 1;
-            } else {
-                tokens.push(DataToken::new(Token::Ref, pos));
-            },
-            '|' => if chars.peek() == Some(&'|') {
-                chars.next();
-                tokens.push(DataToken::new(Token::Or, pos));
-                char_idx += 1;
-            } else {
-                tokens.push(DataToken::new(Token::Bar, pos));
-            },
+            '(' => push!(ParenthesesBegin, tokens, pos),
+            ')' => push!(ParenthesesEnd, tokens, pos),
+            '[' => push!(BracketsBegin, tokens, pos),
+            ']' => push!(BracketsEnd, tokens, pos),
+            '{' => push!(BracesBegin, tokens, pos),
+            '}' => push!(BracesEnd, tokens, pos),
+            ';' => push!(Terminator, tokens, pos),
+            '+' => push!(Plus, tokens, pos),
+            '*' => push!(Star, tokens, pos),
+            '.' => push!(Dot, tokens, pos),
+            '?' => push!(Logical, tokens, pos),
+            ':' => push!(TypeSeperator, tokens, pos),
+            '$' => push!(Quote, tokens, pos),
+            '=' => push_adv!('=', Equals, Assign, chars, tokens, pos, char_idx),
+            '!' => push_adv!('=', NotEquals, Not, chars, tokens, pos, char_idx),
+            '>' => push_adv!('=', GreaterEquals, GreaterThan, chars, tokens, pos, char_idx),
+            '<' => push_adv!('=', LesserEquals, LesserThan, chars, tokens, pos, char_idx),
+            '-' => push_adv!('>', OutputSpecifier, Minus, chars, tokens, pos, char_idx),
+            '&' => push_adv!('&', And, Ref, chars, tokens, pos, char_idx),
+            '|' => push_adv!('|', Or, Bar, chars, tokens, pos, char_idx),
             '/' => if chars.peek() == Some(&'/') {
                 let mut ca = Some('/');
                 while ca != Some('\n') && ca != None {ca = chars.next()};
@@ -272,77 +303,13 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
                         return LexError::new(pos, LexErrorReason::IdentifierStartsWithNumber)
                     }
 
-                    if let Some(ct) = chars.peek() {
-                        if ct == &'i' {
-                            chars.next();
-                            char_idx += 1;
-                            if chars.peek() == Some(&'1') { chars.next(); if chars.next() == Some('6') {
-                                char_idx += 2;
-                                let v = LexError::from_parse(pos, i16::from_str_radix(&buf, 16))?;
-                                tokens.push(DataToken::new(Token::LitI16(v), pos));
-                            }} else if chars.peek() == Some(&'3') { chars.next(); if chars.next() == Some('2') {
-                                char_idx += 2;
-                                let v = LexError::from_parse(pos, i32::from_str_radix(&buf, 16))?;
-                                tokens.push(DataToken::new(Token::LitI32(v), pos));
-                            }} else {
-                                return LexError::new(pos, LexErrorReason::InvalidIntegerType)
-                            }
-                            break
-                        } else if ct == &'b' {
-                            chars.next();
-                            char_idx += 1;
-                            if !(chars.next() == Some('y') && chars.next() == Some('t') && chars.next() == Some('e')) {return LexError::new((line_idx, char_idx), LexErrorReason::MisspelledType)}
-                            char_idx += 3;
-                            let v = LexError::from_parse(pos, u8::from_str_radix(&buf, 16))?;
-                            tokens.push(DataToken::new(Token::LitByte(v), pos));
-                            break
-                        }
-                    }
+                    handle_int_byte_conversion!(buf, 16, chars, tokens, pos, char_idx, break);
                 }
             } else {
                 let mut buf = String::from(c);
 
-                if let Some(ct) = chars.peek() {
-                    if ct == &'i' {
-                        chars.next();
-                        char_idx += 1;
-                        if chars.peek() == Some(&'1') { chars.next(); if chars.next() == Some('6') {
-                            char_idx += 2;
-                            let v = LexError::from_parse(pos, i16::from_str_radix(&buf, 10))?;
-                            tokens.push(DataToken::new(Token::LitI16(v), pos));
-                        }} else if chars.peek() == Some(&'3') { chars.next(); if chars.next() == Some('2') {
-                            char_idx += 2;
-                            let v = LexError::from_parse(pos, i32::from_str_radix(&buf, 10))?;
-                            tokens.push(DataToken::new(Token::LitI32(v), pos));
-                        }} else {
-                            return LexError::new(pos, LexErrorReason::InvalidIntegerType)
-                        }
-                        continue
-                    } else if ct == &'f' {
-                        chars.next();
-                        char_idx += 1;
-                        if chars.peek() == Some(&'3') { chars.next(); if chars.next() == Some('3') {
-                            char_idx += 2;
-                            let v = LexError::from_parsef(pos, buf.parse::<f32>())?;
-                            tokens.push(DataToken::new(Token::LitF32(v), pos));
-                        }} else if chars.peek() == Some(&'6') { chars.next(); if chars.next() == Some('4') {
-                            char_idx += 2;
-                            let v = LexError::from_parsef(pos, buf.parse::<f64>())?;
-                            tokens.push(DataToken::new(Token::LitF64(v), pos));
-                        }} else {
-                            return LexError::new(pos, LexErrorReason::InvalidFloatingPointType)
-                        }
-                        continue
-                    } else if ct == &'b' {
-                        chars.next();
-                        char_idx += 1;
-                        if !(chars.next() == Some('y') && chars.next() == Some('t') && chars.next() == Some('e')) {return LexError::new((line_idx, char_idx), LexErrorReason::MisspelledType)}
-                        char_idx += 3;
-                        let v = LexError::from_parse(pos, u8::from_str_radix(&buf, 10))?;
-                        tokens.push(DataToken::new(Token::LitByte(v), pos));
-                        continue
-                    }
-                }
+                handle_int_byte_conversion!(buf, 10, chars, tokens, pos, char_idx, continue);
+                handle_float_conversion!(buf, chars, tokens, pos, char_idx, continue);
 
                 while let Some(cs) = chars.next() {
                     char_idx += 1;
@@ -357,47 +324,8 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
                         return LexError::new(pos, LexErrorReason::IdentifierStartsWithNumber)
                     }
 
-                    if let Some(ct) = chars.peek() {
-                        if ct == &'i' {
-                            chars.next();
-                            char_idx += 1;
-                            if chars.peek() == Some(&'1') { chars.next(); if chars.next() == Some('6') {
-                                char_idx += 2;
-                                let v = LexError::from_parse(pos, i16::from_str_radix(&buf, 10))?;
-                                tokens.push(DataToken::new(Token::LitI16(v), pos));
-                            }} else if chars.peek() == Some(&'3') { chars.next(); if chars.next() == Some('2') {
-                                char_idx += 2;
-                                let v = LexError::from_parse(pos, i32::from_str_radix(&buf, 10))?;
-                                tokens.push(DataToken::new(Token::LitI32(v), pos));
-                            }} else {
-                                return LexError::new(pos, LexErrorReason::InvalidIntegerType)
-                            }
-                            break
-                        } else if ct == &'f' {
-                            chars.next();
-                            char_idx += 1;
-                            if chars.peek() == Some(&'3') { chars.next(); if chars.next() == Some('3') {
-                                char_idx += 2;
-                                let v = LexError::from_parsef(pos, buf.parse::<f32>())?;
-                                tokens.push(DataToken::new(Token::LitF32(v), pos));
-                            }} else if chars.peek() == Some(&'6') { chars.next(); if chars.next() == Some('4') {
-                                char_idx += 2;
-                                let v = LexError::from_parsef(pos, buf.parse::<f64>())?;
-                                tokens.push(DataToken::new(Token::LitF64(v), pos));
-                            }} else {
-                                return LexError::new(pos, LexErrorReason::InvalidFloatingPointType)
-                            }
-                            break
-                        } else if ct == &'b' {
-                            chars.next();
-                            char_idx += 1;
-                            if !(chars.next() == Some('y') && chars.next() == Some('t') && chars.next() == Some('e')) {return LexError::new((line_idx, char_idx), LexErrorReason::MisspelledType)}
-                            char_idx += 3;
-                            let v = LexError::from_parse(pos, u8::from_str_radix(&buf, 10))?;
-                            tokens.push(DataToken::new(Token::LitByte(v), pos));
-                            break
-                        }
-                    }
+                    handle_int_byte_conversion!(buf, 10, chars, tokens, pos, char_idx, break);
+                    handle_float_conversion!(buf, chars, tokens, pos, char_idx, break);
                 }
             },
             '"' => if let Some(cr) = chars.next() {
@@ -452,34 +380,34 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
                 }
 
                 match buf.as_str() {
-                    "let" => tokens.push(DataToken::new(Token::Let, pos)),
-                    "mut" => tokens.push(DataToken::new(Token::Mut, pos)),
-                    "type" => tokens.push(DataToken::new(Token::Type, pos)),
-                    "func" => tokens.push(DataToken::new(Token::Function, pos)),
-                    "const" => tokens.push(DataToken::new(Token::Const, pos)),
-                    "macro" => tokens.push(DataToken::new(Token::Macro, pos)),
+                    "let" => push!(Let, tokens, pos),
+                    "mut" => push!(Mut, tokens, pos),
+                    "type" => push!(Type, tokens, pos),
+                    "func" => push!(Func, tokens, pos),
+                    "const" => push!(Const, tokens, pos),
+                    "macro" => push!(Macro, tokens, pos),
                     "true" => tokens.push(DataToken::new(Token::LitBool(true), pos)),
                     "false" => tokens.push(DataToken::new(Token::LitBool(false), pos)),
-                    "i16" => tokens.push(DataToken::new(Token::TypeI16, pos)),
-                    "i32" => tokens.push(DataToken::new(Token::TypeI32, pos)),
-                    "f32" => tokens.push(DataToken::new(Token::TypeF32, pos)),
-                    "f64" => tokens.push(DataToken::new(Token::TypeF64, pos)),
-                    "bool" => tokens.push(DataToken::new(Token::TypeBool, pos)),
-                    "byte" => tokens.push(DataToken::new(Token::TypeByte, pos)),
-                    "str" => tokens.push(DataToken::new(Token::TypeStr, pos)),
-                    "array" => tokens.push(DataToken::new(Token::Array, pos)),
-                    "tuple" => tokens.push(DataToken::new(Token::Tuple, pos)),
-                    "struct" => tokens.push(DataToken::new(Token::Struct, pos)),
-                    "enum" => tokens.push(DataToken::new(Token::Enum, pos)),
-                    "if" => tokens.push(DataToken::new(Token::If, pos)),
-                    "else" => tokens.push(DataToken::new(Token::Else, pos)),
-                    "switch" => tokens.push(DataToken::new(Token::Switch, pos)),
-                    "tick" => tokens.push(DataToken::new(Token::Tick, pos)),
-                    "loop" => tokens.push(DataToken::new(Token::Loop, pos)),
-                    "return" => tokens.push(DataToken::new(Token::Return, pos)),
-                    "break" => tokens.push(DataToken::new(Token::Break, pos)),
-                    "async" => tokens.push(DataToken::new(Token::Async, pos)),
-                    "import" => tokens.push(DataToken::new(Token::Import, pos)),
+                    "i16" => push!(TypeI16, tokens, pos),
+                    "i32" => push!(TypeI32, tokens, pos),
+                    "f32" => push!(TypeF32, tokens, pos),
+                    "f64" => push!(TypeF64, tokens, pos),
+                    "bool" => push!(TypeBool, tokens, pos),
+                    "byte" => push!(TypeByte, tokens, pos),
+                    "str" => push!(TypeStr, tokens, pos),
+                    "array" => push!(Array, tokens, pos),
+                    "tuple" => push!(Tuple, tokens, pos),
+                    "struct" => push!(Struct, tokens, pos),
+                    "enum" => push!(Enum, tokens, pos),
+                    "if" => push!(If, tokens, pos),
+                    "else" => push!(Else, tokens, pos),
+                    "switch" => push!(Switch, tokens, pos),
+                    "tick" => push!(Tick, tokens, pos),
+                    "loop" => push!(Loop, tokens, pos),
+                    "return" => push!(Return, tokens, pos),
+                    "break" => push!(Break, tokens, pos),
+                    "async" => push!(Async, tokens, pos),
+                    "import" => push!(Import, tokens, pos),
                     _ => tokens.push(DataToken::new(Token::Identifier(buf), pos))
                 }
             },
@@ -487,6 +415,6 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
         }
     }
 
-    tokens.push(DataToken::new(Token::EOF, (0, 0)));
+    // push!(EOF, tokens, (0, 0));
     Ok(tokens)
 }

@@ -36,7 +36,7 @@ struct Args {
 }
 
 struct Log {
-    verbosity: u8,
+    pub verbosity: u8,
 }
 
 #[allow(dead_code, unreachable_code)]
@@ -49,19 +49,19 @@ impl Log {
 
     #[inline(always)] fn surface(&self, msg: &str) {
         if self.verbosity >= 1 {
-            println!("{msg}");
+            eprintln!("{msg}");
         }
     }
 
     #[inline(always)] fn explicit(&self, msg: &str) {
         if self.verbosity >= 2 {
-            println!("{msg}");
+            eprintln!("{msg}");
         }
     }
 
     #[inline(always)] fn debug(&self, msg: &str) {
         if self.verbosity >= 3 {
-            println!("{msg}");
+            eprintln!("{msg}");
         }
     }
 }
@@ -70,12 +70,12 @@ static ARGS: LazyLock<Args> = LazyLock::new(|| Args::parse());
 static LOG: LazyLock<Log> = LazyLock::new(|| Log::from_args(&*ARGS));
 
 fn main() {
-    LOG.debug(&format!("{:?}\n", *ARGS));
-
     if let Some(ec) = &ARGS.error {
         println!("{}", explanation(ec));
         std::process::exit(0);
     }
+
+    LOG.debug(&format!("{:?}\n", *ARGS));
 
     let inp_string = if let Some(fp) = &ARGS.path {
         fs::read_to_string(fp).expect("Please provide a valid file path")
@@ -111,6 +111,6 @@ fn main() {
     todo!("AST parsing!");
 }
 
-fn explanation(s: &String) -> &'static str {
+fn explanation(_: &String) -> &'static str {
     todo!()
 }
