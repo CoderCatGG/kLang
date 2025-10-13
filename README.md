@@ -22,7 +22,7 @@ func main: (vessel: Vessel /* Vessel holds vessel data */) -> () {
     if ?hi_text { // Not worth printing if its empty
         print(hi_text);
     }
-}
+};
 ```
 
 ### Keywords

@@ -29,13 +29,17 @@ struct Args {
     /// If not specified, will write to STDOUT.
     #[arg(short, long)]
     output: Option<PathBuf>,
+
+    /// Specify an error to get more information
+    #[arg(long)]
+    error: Option<String>,
 }
 
 struct Log {
     verbosity: u8,
 }
 
-#[allow(dead_code, unreachable_code, unused_variables)]
+#[allow(dead_code, unreachable_code)]
 impl Log {
     fn from_args(args: &Args) -> Log {
         Log {
@@ -68,6 +72,11 @@ static LOG: LazyLock<Log> = LazyLock::new(|| Log::from_args(&*ARGS));
 fn main() {
     LOG.debug(&format!("{:?}\n", *ARGS));
 
+    if let Some(ec) = &ARGS.error {
+        println!("{}", explanation(ec));
+        std::process::exit(0);
+    }
+
     let inp_string = if let Some(fp) = &ARGS.path {
         fs::read_to_string(fp).expect("Please provide a valid file path")
     } else {
@@ -89,8 +98,6 @@ fn main() {
 
     LOG.debug(&format!("Lexed:\n\n{:?}\n", &tokenstream));
 
-    std::process::exit(0);
-
     let ast = match parser::parse_tokens(tokenstream) {
         Ok(ast) => ast,
         Err(e) => {
@@ -99,7 +106,11 @@ fn main() {
         }
     };
 
-    // LOG.debug(&format!("Parsed:\n\n{:?}\n", &ast));
+    LOG.debug(&format!("Parsed:\n\n{:?}\n", &ast));
 
     todo!("AST parsing!");
+}
+
+fn explanation(s: &String) -> &'static str {
+    todo!()
 }

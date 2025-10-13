@@ -62,7 +62,7 @@ enum LexErrorReason {
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Token {
     Terminator,
     Assign,
@@ -88,11 +88,13 @@ pub enum Token {
     BracesBegin,
     BracesEnd,
     Bar,
+    Quote,
     Let,
     Mut,
     TypeSeperator,
     Type,
     Function,
+    Const,
     OutputSpecifier,
     Macro,
     LitI16(i16),
@@ -109,19 +111,25 @@ pub enum Token {
     TypeBool,
     TypeByte,
     TypeStr,
+    Array,
+    Tuple,
     Struct,
     Enum,
     Dot,
     If,
     Else,
     Switch,
+    Tick,
+    Loop,
+    Return,
+    Break,
     Async,
     Import,
     Identifier(String),
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct DataToken {
     token: Token,
     pos: (usize, usize),
@@ -130,6 +138,10 @@ pub struct DataToken {
 impl DataToken {
     fn new(tok: Token, pos: (usize, usize)) -> DataToken {
         DataToken { token: tok, pos: pos }
+    }
+
+    pub fn inner(&self) -> &Token {
+        &self.token
     }
 }
 
@@ -168,6 +180,7 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
             '.' => tokens.push(DataToken::new(Token::Dot, pos)),
             '?' => tokens.push(DataToken::new(Token::Logical, pos)),
             ':' => tokens.push(DataToken::new(Token::TypeSeperator, pos)),
+            '$' => tokens.push(DataToken::new(Token::Quote, pos)),
             '=' => if chars.peek() == Some(&'=') {
                 chars.next();
                 tokens.push(DataToken::new(Token::Equals, pos));
@@ -442,6 +455,7 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
                     "mut" => tokens.push(DataToken::new(Token::Mut, pos)),
                     "type" => tokens.push(DataToken::new(Token::Type, pos)),
                     "func" => tokens.push(DataToken::new(Token::Function, pos)),
+                    "const" => tokens.push(DataToken::new(Token::Const, pos)),
                     "macro" => tokens.push(DataToken::new(Token::Macro, pos)),
                     "true" => tokens.push(DataToken::new(Token::LitBool(true), pos)),
                     "false" => tokens.push(DataToken::new(Token::LitBool(false), pos)),
@@ -452,11 +466,17 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
                     "bool" => tokens.push(DataToken::new(Token::TypeBool, pos)),
                     "byte" => tokens.push(DataToken::new(Token::TypeByte, pos)),
                     "str" => tokens.push(DataToken::new(Token::TypeStr, pos)),
+                    "array" => tokens.push(DataToken::new(Token::Array, pos)),
+                    "tuple" => tokens.push(DataToken::new(Token::Tuple, pos)),
                     "struct" => tokens.push(DataToken::new(Token::Struct, pos)),
                     "enum" => tokens.push(DataToken::new(Token::Enum, pos)),
                     "if" => tokens.push(DataToken::new(Token::If, pos)),
                     "else" => tokens.push(DataToken::new(Token::Else, pos)),
                     "switch" => tokens.push(DataToken::new(Token::Switch, pos)),
+                    "tick" => tokens.push(DataToken::new(Token::Tick, pos)),
+                    "loop" => tokens.push(DataToken::new(Token::Loop, pos)),
+                    "return" => tokens.push(DataToken::new(Token::Return, pos)),
+                    "break" => tokens.push(DataToken::new(Token::Break, pos)),
                     "async" => tokens.push(DataToken::new(Token::Async, pos)),
                     "import" => tokens.push(DataToken::new(Token::Import, pos)),
                     _ => tokens.push(DataToken::new(Token::Identifier(buf), pos))
