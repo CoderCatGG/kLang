@@ -2,9 +2,6 @@ use std::fmt::Display;
 use std::error::Error;
 use std::num::{IntErrorKind, ParseFloatError, ParseIntError};
 
-#[allow(unused_imports)]
-use super::never_panic::*;
-
 #[derive(Debug)]
 pub struct LexError {
     pos: (usize, usize),

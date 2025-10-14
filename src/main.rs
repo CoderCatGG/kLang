@@ -5,7 +5,6 @@ use std::fs;
 
 use clap::Parser;
 
-mod never_panic;
 mod lexer;
 mod parser;
 

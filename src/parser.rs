@@ -1,9 +1,6 @@
 use std::{error::Error, fmt::Display, iter::Peekable};
 use super::lexer::{DataToken, Token};
 
-#[allow(unused_imports)]
-use super::never_panic::*;
-
 #[derive(Debug)]
 pub struct ParseError {
     token: DataToken,
