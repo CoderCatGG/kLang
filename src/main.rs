@@ -5,6 +5,7 @@ use std::fs;
 
 use clap::Parser;
 
+mod never_panic;
 mod lexer;
 mod parser;
 
@@ -96,7 +97,7 @@ fn main() {
         }
     };
 
-    LOG.debug(&format!("Lexed:\n\n{:?}\n", &tokenstream));
+    LOG.debug(&format!("\nLexed:\n\n{:?}\n", &tokenstream));
 
     let ast = match parser::parse_tokens(tokenstream) {
         Ok(ast) => ast,
@@ -106,9 +107,9 @@ fn main() {
         }
     };
 
-    LOG.debug(&format!("Parsed:\n\n{:?}\n", &ast));
+    LOG.debug(&format!("\nParsed:\n\n{:?}\n", &ast));
 
-    todo!("AST parsing!");
+    todo!("Finish parsing & Compilation");
 }
 
 fn explanation(_: &String) -> &'static str {

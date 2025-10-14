@@ -2,6 +2,9 @@ use std::fmt::Display;
 use std::error::Error;
 use std::num::{IntErrorKind, ParseFloatError, ParseIntError};
 
+#[allow(unused_imports)]
+use super::never_panic::*;
+
 #[derive(Debug)]
 pub struct LexError {
     pos: (usize, usize),
@@ -116,6 +119,7 @@ pub enum Token {
     Struct,
     Enum,
     Dot,
+    Comma,
     If,
     Else,
     Switch,
@@ -126,6 +130,7 @@ pub enum Token {
     Async,
     Import,
     Identifier(String),
+    Assembly(String),
     EOF,
 }
 
@@ -141,18 +146,26 @@ impl DataToken {
         DataToken { token: tok, pos: pos }
     }
 
+    pub fn null() -> DataToken {
+        DataToken { token: Token::EOF, pos: (0, 0) }
+    }
+
+    pub fn get_pos(&self) -> (usize, usize) {
+        self.pos
+    }
+
     pub fn inner(&self) -> &Token {
         &self.token
     }
 }
 
 macro_rules! push {
-    ($tok:ident, $s:ident, $p:expr) => {
-        $s.push(DataToken::new(Token::$tok, $p))
+    ($tok:expr, $s:ident, $p:expr) => {
+        $s.push(DataToken::new($tok, $p))
     };
 }
 
-macro_rules! push_adv {
+macro_rules! push_conditional {
     ($case:literal, $true:ident, $fallback:ident, $c:ident, $s:ident, $p:expr, $i:ident) => {
         if $c.peek() == Some(&$case) {
             $c.next(); $i += 1;
@@ -230,7 +243,7 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
 
         let pos = (line_idx, char_idx);
         
-        #[cfg(feature = "super_explicit")]
+        #[cfg(feature = "slow_dev_debugging")]
         super::LOG.debug(&format!("Parsing char {:?}: {:?}", c, pos));
 
         if c.is_whitespace() {
@@ -242,26 +255,27 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
         }
 
         match c {
-            '(' => push!(ParenthesesBegin, tokens, pos),
-            ')' => push!(ParenthesesEnd, tokens, pos),
-            '[' => push!(BracketsBegin, tokens, pos),
-            ']' => push!(BracketsEnd, tokens, pos),
-            '{' => push!(BracesBegin, tokens, pos),
-            '}' => push!(BracesEnd, tokens, pos),
-            ';' => push!(Terminator, tokens, pos),
-            '+' => push!(Plus, tokens, pos),
-            '*' => push!(Star, tokens, pos),
-            '.' => push!(Dot, tokens, pos),
-            '?' => push!(Logical, tokens, pos),
-            ':' => push!(TypeSeperator, tokens, pos),
-            '$' => push!(Quote, tokens, pos),
-            '=' => push_adv!('=', Equals, Assign, chars, tokens, pos, char_idx),
-            '!' => push_adv!('=', NotEquals, Not, chars, tokens, pos, char_idx),
-            '>' => push_adv!('=', GreaterEquals, GreaterThan, chars, tokens, pos, char_idx),
-            '<' => push_adv!('=', LesserEquals, LesserThan, chars, tokens, pos, char_idx),
-            '-' => push_adv!('>', OutputSpecifier, Minus, chars, tokens, pos, char_idx),
-            '&' => push_adv!('&', And, Ref, chars, tokens, pos, char_idx),
-            '|' => push_adv!('|', Or, Bar, chars, tokens, pos, char_idx),
+            '(' => push!(Token::ParenthesesBegin, tokens, pos),
+            ')' => push!(Token::ParenthesesEnd, tokens, pos),
+            '[' => push!(Token::BracketsBegin, tokens, pos),
+            ']' => push!(Token::BracketsEnd, tokens, pos),
+            '{' => push!(Token::BracesBegin, tokens, pos),
+            '}' => push!(Token::BracesEnd, tokens, pos),
+            ';' => push!(Token::Terminator, tokens, pos),
+            '+' => push!(Token::Plus, tokens, pos),
+            '*' => push!(Token::Star, tokens, pos),
+            '.' => push!(Token::Dot, tokens, pos),
+            ',' => push!(Token::Comma, tokens, pos),
+            '?' => push!(Token::Logical, tokens, pos),
+            ':' => push!(Token::TypeSeperator, tokens, pos),
+            '$' => push!(Token::Quote, tokens, pos),
+            '=' => push_conditional!('=', Equals, Assign, chars, tokens, pos, char_idx),
+            '!' => push_conditional!('=', NotEquals, Not, chars, tokens, pos, char_idx),
+            '>' => push_conditional!('=', GreaterEquals, GreaterThan, chars, tokens, pos, char_idx),
+            '<' => push_conditional!('=', LesserEquals, LesserThan, chars, tokens, pos, char_idx),
+            '-' => push_conditional!('>', OutputSpecifier, Minus, chars, tokens, pos, char_idx),
+            '&' => push_conditional!('&', And, Ref, chars, tokens, pos, char_idx),
+            '|' => push_conditional!('|', Or, Bar, chars, tokens, pos, char_idx),
             '/' => if chars.peek() == Some(&'/') {
                 let mut ca = Some('/');
                 while ca != Some('\n') && ca != None {ca = chars.next()};
@@ -380,41 +394,56 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
                 }
 
                 match buf.as_str() {
-                    "let" => push!(Let, tokens, pos),
-                    "mut" => push!(Mut, tokens, pos),
-                    "type" => push!(Type, tokens, pos),
-                    "func" => push!(Func, tokens, pos),
-                    "const" => push!(Const, tokens, pos),
-                    "macro" => push!(Macro, tokens, pos),
-                    "true" => tokens.push(DataToken::new(Token::LitBool(true), pos)),
-                    "false" => tokens.push(DataToken::new(Token::LitBool(false), pos)),
-                    "i16" => push!(TypeI16, tokens, pos),
-                    "i32" => push!(TypeI32, tokens, pos),
-                    "f32" => push!(TypeF32, tokens, pos),
-                    "f64" => push!(TypeF64, tokens, pos),
-                    "bool" => push!(TypeBool, tokens, pos),
-                    "byte" => push!(TypeByte, tokens, pos),
-                    "str" => push!(TypeStr, tokens, pos),
-                    "array" => push!(Array, tokens, pos),
-                    "tuple" => push!(Tuple, tokens, pos),
-                    "struct" => push!(Struct, tokens, pos),
-                    "enum" => push!(Enum, tokens, pos),
-                    "if" => push!(If, tokens, pos),
-                    "else" => push!(Else, tokens, pos),
-                    "switch" => push!(Switch, tokens, pos),
-                    "tick" => push!(Tick, tokens, pos),
-                    "loop" => push!(Loop, tokens, pos),
-                    "return" => push!(Return, tokens, pos),
-                    "break" => push!(Break, tokens, pos),
-                    "async" => push!(Async, tokens, pos),
-                    "import" => push!(Import, tokens, pos),
-                    _ => tokens.push(DataToken::new(Token::Identifier(buf), pos))
+                    "let" => push!(Token::Let, tokens, pos),
+                    "mut" => push!(Token::Mut, tokens, pos),
+                    "type" => push!(Token::Type, tokens, pos),
+                    "func" => push!(Token::Func, tokens, pos),
+                    "const" => push!(Token::Const, tokens, pos),
+                    "macro" => push!(Token::Macro, tokens, pos),
+                    "true" => push!(Token::LitBool(true), tokens, pos),
+                    "false" => push!(Token::LitBool(false), tokens, pos),
+                    "i16" => push!(Token::TypeI16, tokens, pos),
+                    "i32" => push!(Token::TypeI32, tokens, pos),
+                    "f32" => push!(Token::TypeF32, tokens, pos),
+                    "f64" => push!(Token::TypeF64, tokens, pos),
+                    "bool" => push!(Token::TypeBool, tokens, pos),
+                    "byte" => push!(Token::TypeByte, tokens, pos),
+                    "str" => push!(Token::TypeStr, tokens, pos),
+                    "array" => push!(Token::Array, tokens, pos),
+                    "tuple" => push!(Token::Tuple, tokens, pos),
+                    "struct" => push!(Token::Struct, tokens, pos),
+                    "enum" => push!(Token::Enum, tokens, pos),
+                    "if" => push!(Token::If, tokens, pos),
+                    "else" => push!(Token::Else, tokens, pos),
+                    "switch" => push!(Token::Switch, tokens, pos),
+                    "tick" => push!(Token::Tick, tokens, pos),
+                    "loop" => push!(Token::Loop, tokens, pos),
+                    "return" => push!(Token::Return, tokens, pos),
+                    "break" => push!(Token::Break, tokens, pos),
+                    "async" => push!(Token::Async, tokens, pos),
+                    "import" => push!(Token::Import, tokens, pos),
+                    _ => push!(Token::Identifier(buf), tokens, pos)
                 }
+            },
+            '#' => {
+                let mut buf = String::new();
+                while let Some(cs) = chars.next() {
+                    char_idx += 1;
+                    buf.push(cs);
+
+                    match chars.peek() {
+                        Some(&'\n') => break,
+                        None => break,
+                        _ => {}
+                    }
+                }
+
+                push!(Token::Assembly(buf), tokens, pos);
             },
             _ => return LexError::new(pos, LexErrorReason::UnexpectedCharacter)
         }
     }
 
-    // push!(EOF, tokens, (0, 0));
+    // push!(Token::EOF, tokens, (0, 0));
     Ok(tokens)
 }
