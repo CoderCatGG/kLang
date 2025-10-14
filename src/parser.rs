@@ -128,7 +128,7 @@ macro_rules! expect_token {
         if let Some($t) = $s.next() {
             $expr
         } else {
-            return ParseError::new(&DataToken::null(), ParseErrorReason::EarlyEOF, "Expected an identifier, program termianted early");
+            return ParseError::new(&DataToken::null(), ParseErrorReason::EarlyEOF, "Expected another token, program termianted early");
         }
     };
 }
@@ -138,7 +138,7 @@ macro_rules! expect_token_peek {
         if let Some($t) = $s.peek() {
             $expr
         } else {
-            return ParseError::new(&DataToken::null(), ParseErrorReason::EarlyEOF, "Expected an identifier, program termianted early");
+            return ParseError::new(&DataToken::null(), ParseErrorReason::EarlyEOF, "Expected another token, program termianted early");
         }
     };
 }
@@ -212,7 +212,7 @@ fn parse_macro<'a>(tokens: &mut tokenstream!()) -> Result<(String, Vec<DataToken
 
             macro_tokens.push(tok.clone());
         } else {
-            break
+            return ParseError::new(&DataToken::null(), ParseErrorReason::EarlyEOF, "Expected another token, program termianted early");
         }
     }
 
