@@ -163,10 +163,6 @@ pub enum Stmt {
         r#type: Type,
         expr: Expr,
     },
-    Mutate {
-        name: String,
-        expr: Expr,
-    },
     Loop(Scope),
     Return(Option<Expr>),
     Break(Option<Expr>),
@@ -218,7 +214,7 @@ pub enum Lit {
 }
 
 #[derive(Debug)]
-enum Type {
+pub enum Type {
     I16,
     I32,
     F32,
@@ -231,23 +227,32 @@ enum Type {
 }
 
 #[derive(Debug)]
-struct Constant {
+pub struct Constant {
     name: String,
     r#type: Type,
     expr: Expr,
 }
 
-pub fn parse_tokens(tokens: Vec<DataToken>) -> Result<Vec<(Stmt, (usize, usize))>, ParseError> {
+#[derive(Debug)]
+pub struct AST {
+    statements: Vec<(Stmt, (usize, usize))>,
+    consts: Vec<Constant>,
+    macros: Vec<(String, Expr)>,
+    types: Vec<(String, Type)>,
+}
+
+pub fn parse_tokens(tokens: Vec<DataToken>) -> Result<AST, ParseError> {
     let mut tokenstream = tokens.into_iter().peekable();
     
     parse_global(&mut tokenstream)
 }
 
-fn parse_global(tokens: &mut tokenstream!()) -> Result<Vec<(Stmt, (usize, usize))>, ParseError> {
+fn parse_global(tokens: &mut tokenstream!()) -> Result<AST, ParseError> {
     let mut result: Vec<(Stmt, (usize, usize))> = Vec::new();
 
     let mut consts: Vec<Constant> = Vec::new();
-    let mut macros: Vec<(String, Vec<DataToken>)> = Vec::new();
+    let mut macros: Vec<(String, Expr)> = Vec::new();
+    let mut types: Vec<(String, Type)> = Vec::new();
 
     loop {
         #[cfg(feature = "slow_dev_debugging")]
@@ -257,7 +262,7 @@ fn parse_global(tokens: &mut tokenstream!()) -> Result<Vec<(Stmt, (usize, usize)
             Some(t) => match t.inner() {
                 Token::Const => consts.push(parse_constant(tokens)?),
                 Token::Macro => macros.push(parse_macro(tokens)?),
-                Token::Type => todo!("type statements"),
+                Token::Type => types.push(parse_type_assign(tokens)?),
                 Token::Func => result.push((Stmt::Func(parse_function(tokens)?), t.get_pos())),
                 _ => return ParseError::new(&tokens.next().unwrap(), ParseErrorReason::UnexpectedToken, "An unexpected token in global scope, allowed tokens: `func`, `const`, `macro` and `type`")
             },
@@ -267,8 +272,14 @@ fn parse_global(tokens: &mut tokenstream!()) -> Result<Vec<(Stmt, (usize, usize)
 
     super::LOG.debug(&format!("\nGot constants: {:?}", consts));
     super::LOG.debug(&format!("Got macros: {:?}", macros));
+    super::LOG.debug(&format!("Got types: {:?}", types));
 
-    Ok(result)
+    Ok(AST {
+        statements: result,
+        consts,
+        macros,
+        types,
+    })
 }
 
 fn parse_constant(tokens: &mut tokenstream!()) -> Result<Constant, ParseError> {
@@ -298,32 +309,32 @@ fn parse_constant(tokens: &mut tokenstream!()) -> Result<Constant, ParseError> {
     })
 }
 
-fn parse_macro(tokens: &mut tokenstream!()) -> Result<(String, Vec<DataToken>), ParseError> {
+fn parse_macro(tokens: &mut tokenstream!()) -> Result<(String, Expr), ParseError> {
     // /* parse_global does this already */ consume!(tokens, Macro, "Macros must be started with `macro`");
     
     let name = ident!(tokens);
 
     consume!(tokens, OutputSpecifier, "Macros must have tokens after output specifier `->`");
 
-    let mut macro_tokens = Vec::new();
-    let mut scope_lvl: usize = 0;
+    let expr = parse_expr(tokens, 0)?;
 
-    loop {
-        expect_token!(tokens, tok, {
-            match tok.inner() {
-                Token::BracesBegin => scope_lvl += 1,
-                Token::BracesEnd => scope_lvl -= 1,
-                Token::Terminator if scope_lvl == 0 => break,
-                _ => {}
-            }
+    consume!(tokens, Terminator, "Macros must be properly terminated");
 
-            macro_tokens.push(tok.clone());
-        });
-    }
+    Ok((name, expr))
+}
 
-    // /* THE LOOP DOES THIS YOU APE */ consume!(tokens, Terminator, "Macros must be properly terminated");
+fn parse_type_assign(tokens: &mut tokenstream!()) -> Result<(String, Type), ParseError> {
+    // /* parse_global does this already */ consume!(tokens, Const, "Constant expressions must be started with `const`");
+    
+    let name = ident!(tokens);
 
-    Ok((name, macro_tokens))
+    consume!(tokens, TypeSeperator, "Type definitions must have their type specified with `:`");
+
+    let r#type = parse_type(tokens)?;
+
+    consume!(tokens, Terminator, "Constants must be properly terminated");
+
+    Ok((name, r#type))
 }
 
 fn parse_function(tokens: &mut tokenstream!()) -> Result<Function, ParseError> {
