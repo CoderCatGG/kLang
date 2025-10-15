@@ -42,51 +42,8 @@ enum ParseErrorReason {
 
 macro_rules! tokenstream {
     () => {
-        Peekable<impl Iterator<Item = &'a DataToken>>
+        Peekable<impl Iterator<Item = DataToken>>
     };
-}
-
-pub fn parse_tokens(tokens: Vec<DataToken>) -> Result<Vec<(Stmt, (usize, usize))>, ParseError> {
-    let mut tokenstream = tokens.iter().peekable();
-    
-    parse_global(&mut tokenstream)
-}
-
-#[derive(Debug)]
-pub enum Stmt {
-    Assembly(String),
-    Expr(Expr),
-    Func(Function),
-}
-
-#[derive(Debug)]
-struct Function {
-    name: String,
-    input: Vec<(String, Type)>,
-    output: Type,
-    body: FunctionBody,
-}
-
-#[derive(Debug)]
-struct FunctionBody(Vec<Stmt>);
-
-#[derive(Debug)]
-pub enum Expr {
-    Flow {
-        expr: Box<Expr>,
-    }
-}
-
-#[derive(Debug)]
-enum Type {
-    I16,
-    I32,
-    F32,
-    F64,
-    Bool,
-    Byte,
-    Str,
-    Unit,
 }
 
 macro_rules! consume {
@@ -101,16 +58,10 @@ macro_rules! consume {
     };
 }
 
-macro_rules! expr {
-    ($ty:ident) => {
-        return Expr::$ty
+macro_rules! expr_boxed {
+    ($s:ident, $bp:expr) => {
+        Box::new(parse_expr($s, $bp)?)
     }
-}
-
-macro_rules! push {
-    ($stmt:expr, $tok:expr, $s:tt) => {
-        $s.push(($stmt, ($tok.get_pos()).clone()))
-    };
 }
 
 macro_rules! ident {
@@ -118,7 +69,7 @@ macro_rules! ident {
         expect_token!($s, t, if let Token::Identifier(s) = t.inner() {
                 s.to_string()
             } else {
-                return ParseError::new(t, ParseErrorReason::ExpectedToken("Identitfier"), "Expected an identifier");
+                return ParseError::new(&t, ParseErrorReason::ExpectedToken("Identifier"), "Expected an identifier");
         })
     };
 }
@@ -153,10 +104,147 @@ macro_rules! optional {
     };
 }
 
-fn parse_global<'a>(tokens: &mut tokenstream!()) -> Result<Vec<(Stmt, (usize, usize))>, ParseError> {
+macro_rules! lit_or_ident {
+    () => {
+        Token::LitI16(_) | Token::LitI32(_) | Token::LitF32(_) | Token::LitF64(_) | Token::LitBool(_) | Token::LitByte(_) | Token::LitStr(_) | Token::Identifier(_)
+    };
+}
+
+macro_rules! token_lit_to_expr_lit {
+    ($tok:expr) => {
+        match $tok.inner() {
+            Token::LitI16(n) => Expr::Lit(Lit::I16(*n)),
+            Token::LitI32(n) => Expr::Lit(Lit::I32(*n)),
+            Token::LitF32(n) => Expr::Lit(Lit::F32(*n)),
+            Token::LitF64(n) => Expr::Lit(Lit::F64(*n)),
+            Token::LitBool(b) => Expr::Lit(Lit::Bool(*b)),
+            Token::LitByte(b) => Expr::Lit(Lit::Byte(*b)),
+            Token::LitStr(s) => Expr::Lit(Lit::Str(s.to_string())),
+            Token::Identifier(s) => Expr::Lit(Lit::Identifier(s.to_string())),
+            _ => return ParseError::new(&$tok, ParseErrorReason::ExpectedToken("Literal"), "Expected a literal. Whoever sent you this build should be ashamed and have checked that this is a literal before")
+        }
+    };
+}
+
+macro_rules! expr_binary {
+    ($op:expr, $lhs:expr, $rhs:expr) => {
+        Some(Expr::Binary { op: $op, lhs: $lhs, rhs: $rhs })
+    };
+}
+
+macro_rules! expect_box {
+    ($smth:expr) => {
+        if let Some(thing) = $smth {
+            Box::new(thing)
+        } else {
+            return ParseError::new(&DataToken::null(), ParseErrorReason::UnexpectedToken, "Parsed infix operator as prefix operator")
+        }
+    };
+}
+
+macro_rules! expect_lit_ident {
+    ($expr_tok:expr) => {
+        if let Expr::Lit(Lit::Identifier(s)) = $expr_tok {
+            s
+        } else {
+            return ParseError::new(&DataToken::null(), ParseErrorReason::ExpectedToken("Identifier"), "Expected this literal to be an identifier")
+        }
+    };
+}
+
+#[derive(Debug)]
+pub enum Stmt {
+    Assembly(String),
+    Expr(Expr),
+    Func(Function),
+    Assign {
+        name: String,
+        mutable: bool,
+        expr: Expr,
+    },
+    Mutate {
+        name: String,
+        expr: Expr,
+    },
+    Loop(Scope),
+    Return(Option<Expr>),
+    Break(Option<Expr>),
+}
+
+#[derive(Debug)]
+pub struct Function {
+    name: String,
+    input: Vec<(String, Type)>,
+    output: Type,
+    body: Scope,
+}
+
+#[derive(Debug)]
+pub enum Expr {
+    Call {
+        name: String,
+        inputs: Vec<Expr>,
+    },
+    Var(String),
+    Unary {
+        op: Token,
+        expr: Box<Expr>,
+    },
+    Binary {
+        op: Token,
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
+    Scope(Scope),
+    Lit(Lit),
+}
+
+#[derive(Debug)]
+pub struct Scope {
+    statements: Vec<Stmt>,
+}
+
+#[derive(Debug)]
+pub enum Lit {
+    I16(i16),
+    I32(i32),
+    F32(f32),
+    F64(f64),
+    Bool(bool),
+    Byte(u8),
+    Str(String),
+    Identifier(String),
+}
+
+#[derive(Debug)]
+enum Type {
+    I16,
+    I32,
+    F32,
+    F64,
+    Bool,
+    Byte,
+    Str,
+    Unit,
+}
+
+#[derive(Debug)]
+struct Constant {
+    name: String,
+    r#type: Type,
+    expr: Expr,
+}
+
+pub fn parse_tokens(tokens: Vec<DataToken>) -> Result<Vec<(Stmt, (usize, usize))>, ParseError> {
+    let mut tokenstream = tokens.into_iter().peekable();
+    
+    parse_global(&mut tokenstream)
+}
+
+fn parse_global(tokens: &mut tokenstream!()) -> Result<Vec<(Stmt, (usize, usize))>, ParseError> {
     let mut result: Vec<(Stmt, (usize, usize))> = Vec::new();
 
-    let mut consts: Vec<(String, Expr)> = Vec::new();
+    let mut consts: Vec<Constant> = Vec::new();
     let mut macros: Vec<(String, Vec<DataToken>)> = Vec::new();
 
     loop {
@@ -181,18 +269,33 @@ fn parse_global<'a>(tokens: &mut tokenstream!()) -> Result<Vec<(Stmt, (usize, us
     Ok(result)
 }
 
-fn parse_constant<'a>(tokens: &mut tokenstream!()) -> Result<(String, Expr), ParseError> {
-    // /* parse_global does this for us */ consume!(tokens, Const, "Constant expressions must be started with `const`");
+fn parse_constant(tokens: &mut tokenstream!()) -> Result<Constant, ParseError> {
+    // /* parse_global does this already */ consume!(tokens, Const, "Constant expressions must be started with `const`");
     
-    let _name = ident!(tokens);
+    let name = ident!(tokens);
+
+    let r#type = expect_token_peek!(tokens, tok,
+        if tok.inner() == &Token::TypeSeperator {
+            tokens.next();
+            parse_type(tokens)?
+        } else {
+            return ParseError::new(tok, ParseErrorReason::InvalidType, "Constants must have a specified type")
+        }
+    );
 
     consume!(tokens, Assign, "Constants must have assigned values using `assign` values");
 
-    todo!("constants");
+    let expr = parse_expr(tokens, 0)?;
+
+    Ok(Constant {
+        name,
+        r#type,
+        expr,
+    })
 }
 
-fn parse_macro<'a>(tokens: &mut tokenstream!()) -> Result<(String, Vec<DataToken>), ParseError> {
-    // /* parse_global does this for us */ consume!(tokens, Macro, "Macros must be started with `macro`");
+fn parse_macro(tokens: &mut tokenstream!()) -> Result<(String, Vec<DataToken>), ParseError> {
+    // /* parse_global does this already */ consume!(tokens, Macro, "Macros must be started with `macro`");
     
     let name = ident!(tokens);
 
@@ -202,7 +305,7 @@ fn parse_macro<'a>(tokens: &mut tokenstream!()) -> Result<(String, Vec<DataToken
     let mut scope_lvl: usize = 0;
 
     loop {
-        if let Some(tok) = tokens.next() {
+        expect_token!(tokens, tok, {
             match tok.inner() {
                 Token::BracesBegin => scope_lvl += 1,
                 Token::BracesEnd => scope_lvl -= 1,
@@ -211,9 +314,7 @@ fn parse_macro<'a>(tokens: &mut tokenstream!()) -> Result<(String, Vec<DataToken
             }
 
             macro_tokens.push(tok.clone());
-        } else {
-            return ParseError::new(&DataToken::null(), ParseErrorReason::EarlyEOF, "Expected another token, program termianted early");
-        }
+        });
     }
 
     // /* THE LOOP DOES THIS YOU APE */ consume!(tokens, Terminator, "Macros must be properly terminated");
@@ -221,8 +322,8 @@ fn parse_macro<'a>(tokens: &mut tokenstream!()) -> Result<(String, Vec<DataToken
     Ok((name, macro_tokens))
 }
 
-fn parse_function<'a>(tokens: &mut tokenstream!()) -> Result<Function, ParseError> {
-    // /* parse_global does this for us */ consume!(tokens, Func, "Functions must be started with `func`");
+fn parse_function(tokens: &mut tokenstream!()) -> Result<Function, ParseError> {
+    // /* parse_global does this already */ consume!(tokens, Func, "Functions must be started with `func`");
     
     let name = ident!(tokens);
 
@@ -261,7 +362,7 @@ fn parse_function<'a>(tokens: &mut tokenstream!()) -> Result<Function, ParseErro
 
     let output_type = parse_type(tokens)?;
 
-    let body = parse_function_body(tokens)?;
+    let body = parse_scope(tokens)?;
 
     Ok(Function {
         name,
@@ -271,14 +372,161 @@ fn parse_function<'a>(tokens: &mut tokenstream!()) -> Result<Function, ParseErro
     })
 }
 
-fn parse_function_body<'a>(tokens: &mut tokenstream!()) -> Result<FunctionBody, ParseError> {
-    consume!(tokens, BracesBegin, "Function body needs to be surrounded by curly braces (`{}`)");
-    
+fn parse_scope(tokens: &mut tokenstream!()) -> Result<Scope, ParseError> {
+    consume!(tokens, BracesBegin, "A scope needs to be surrounded by curly braces (`{}`)");
     let mut statements = Vec::new();
+    loop {
+        #[cfg(feature = "slow_dev_debugging")]
+        super::LOG.debug(&format!("Parsing token in scope: {:?}", tokens.peek()));
 
-    consume!(tokens, BracesEnd, "Function body needs to be surrounded by curly braces (`{}`)");
-    
-    Ok(FunctionBody(statements))
+        expect_token_peek!(tokens, tok, match tok.inner() {
+            Token::BracesEnd => {tokens.next(); return Ok(Scope { statements })},
+            Token::BracesBegin => statements.push(Stmt::Expr(Expr::Scope(parse_scope(tokens)?))),
+            Token::Assembly(ksm) => {statements.push(Stmt::Assembly(ksm.to_string())); tokens.next();},
+            Token::Let => {
+                tokens.next();
+
+                let mutable = expect_token_peek!(tokens, t, 
+                    if t.inner() == &Token::Mut {
+                        tokens.next();
+                        true
+                    } else {
+                        false
+                    }
+                );
+
+                let name = ident!(tokens);
+
+                consume!(tokens, Assign, "Let statements need to be followed by an assignment `=`");
+                
+                let expr = parse_expr(tokens, 0)?;
+                
+                consume!(tokens, Terminator, "Let statements must be terminated with `;`");
+
+                statements.push(Stmt::Assign {
+                    name,
+                    mutable,
+                    expr,
+                });
+            },
+            Token::Loop => {tokens.next(); statements.push(Stmt::Loop(parse_scope(tokens)?))},
+            Token::Return => {
+                tokens.next();
+
+                expect_token_peek!(tokens, tok, 
+                    if tok.inner() == &Token::Terminator {
+                        tokens.next();
+                        statements.push(Stmt::Return(None));
+                        continue
+                    }
+                );
+                statements.push(Stmt::Return(Some(parse_expr(tokens, 0)?)));
+                consume!(tokens, Terminator, "Return must be terminated with `;`, as it is currently a statement");
+            },
+            Token::Break => {
+                tokens.next();
+
+                expect_token_peek!(tokens, tok, 
+                    if tok.inner() == &Token::Terminator {
+                        tokens.next();
+                        statements.push(Stmt::Break(None));
+                        continue
+                    }
+                );
+                statements.push(Stmt::Break(Some(parse_expr(tokens, 0)?)));
+                consume!(tokens, Terminator, "Break must be terminated with `;`, as it is currently a statement");
+            },
+            Token::Terminator => {super::LOG.explicit(&format!("Stray terminator `;`: {:?}", &tok)); tokens.next();}
+            _ => statements.push(Stmt::Expr(parse_expr(tokens, 0)?))
+        });
+    }
+}
+
+fn parse_expr(tokens: &mut tokenstream!(), min_bp: u8) -> Result<Expr, ParseError> {
+    #[cfg(feature = "slow_dev_debugging")]
+    super::LOG.debug(&format!("Expr parsing: {:?}", tokens.peek()));
+
+    let mut lhs = expect_token_peek!(tokens, tok, match tok.inner() {
+        Token::ParenthesesBegin => {
+            tokens.next();
+            let inner = parse_expr(tokens, 0)?;
+            consume!(tokens, ParenthesesEnd, "Paratheses must be terminated");
+            Some(inner)
+        },
+        Token::BracesBegin => Some(Expr::Scope(parse_scope(tokens)?)),
+        _ => None
+    });
+
+    loop {
+        expect_token_peek!(tokens, tok, match tok.inner() {
+            // PREFIX OPERATORS
+            Token::Not /* infinite right-bp! */ if lhs.is_none() => {tokens.next(); lhs = Some(Expr::Unary { op: Token::Not, expr: expr_boxed!(tokens, 255) })},
+            Token::Logical /* infinite right-bp! */ if lhs.is_none() => {tokens.next(); lhs = Some(Expr::Unary { op: Token::Logical, expr: expr_boxed!(tokens, 255) })},
+            Token::Minus /* infinite right-bp! */ if lhs.is_none() => {tokens.next(); lhs = Some(Expr::Unary { op: Token::Minus, expr: expr_boxed!(tokens, 255) })},
+            // INFIX OPERATORS
+            Token::Star if min_bp < /* left-bp */ 11 => {tokens.next(); lhs = expr_binary!(Token::Star, expect_box!(lhs), expr_boxed!(tokens, /* right-bp */ 12)); continue},
+            Token::Div if min_bp < /* left-bp */ 11 => {tokens.next(); lhs = expr_binary!(Token::Div, expect_box!(lhs), expr_boxed!(tokens, /* right-bp */ 12)); continue},
+            Token::Plus if min_bp < /* left-bp */ 5 => {tokens.next(); lhs = expr_binary!(Token::Plus, expect_box!(lhs), expr_boxed!(tokens, /* right-bp */ 6)); continue},
+            Token::Minus if min_bp < /* left-bp */ 5 => {tokens.next(); lhs = expr_binary!(Token::Minus, expect_box!(lhs), expr_boxed!(tokens, /* right-bp */ 6)); continue},
+            Token::Star => break,
+            Token::Div => break,
+            Token::Plus => break,
+            Token::Minus => break,
+            // ATOM
+            lit_or_ident!() => {
+                let nlhs = token_lit_to_expr_lit!(tok);
+
+                tokens.next();
+
+                #[cfg(feature = "slow_dev_debugging")]
+                super::LOG.debug(&format!("Expr parsing post ident: {:?}", tokens.peek()));
+
+                expect_token_peek!(tokens, t, match t.inner() {
+                    // POSTFIX OPERATORS
+                    Token::ParenthesesBegin /* infinite left-bp! */ => {
+                        tokens.next();
+
+                        let mut inputs = Vec::new();
+
+                        loop {
+                            expect_token_peek!(tokens, t, 
+                                if t.inner() == &Token::ParenthesesEnd {
+                                    tokens.next();
+                                    break
+                                }
+                            );
+
+                            inputs.push(parse_expr(tokens, 0)?);
+
+                            expect_token_peek!(tokens, t,
+                                if t.inner() == &Token::ParenthesesEnd {
+                                    tokens.next();
+                                    break
+                                } else {
+                                    consume!(tokens, Comma, "Function call paramters must be seperated with commas `,`");
+                                }
+                            );
+                        }
+
+                        lhs = Some(Expr::Call { name: expect_lit_ident!(nlhs), inputs, });
+
+                        expect_token_peek!(tokens, t, match t.inner() {
+                            Token::Star | Token::Div | Token::Plus | Token::Minus => continue,
+                            _ => break
+                        });
+                    },
+                    _ => {lhs = Some(nlhs); continue}
+                });
+            },
+            _ => break
+        })
+    }
+
+    if let Some(expr) = lhs {
+        return Ok(expr)
+    } else {
+        return ParseError::new(expect_token_peek!(tokens, t, &t), ParseErrorReason::ExpectedToken("Expr"), "Expression cannot be empty")
+    }
 }
 
 fn parse_type<'a>(tokens: &mut tokenstream!()) -> Result<Type, ParseError> {
@@ -293,7 +541,7 @@ fn parse_type<'a>(tokens: &mut tokenstream!()) -> Result<Type, ParseError> {
         Token::ParenthesesBegin => {
             consume!(tokens, ParenthesesEnd, "Tuples not yet supported");
             Ok(Type::Unit)
-        }
-        _ => return ParseError::new(t, ParseErrorReason::InvalidType, "Not a valid type")
+        },
+        _ => return ParseError::new(&t, ParseErrorReason::InvalidType, "Not a valid type")
     })
 }
