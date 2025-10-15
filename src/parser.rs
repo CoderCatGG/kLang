@@ -160,6 +160,7 @@ pub enum Stmt {
     Assign {
         name: String,
         mutable: bool,
+        r#type: Type,
         expr: Expr,
     },
     Mutate {
@@ -226,6 +227,7 @@ enum Type {
     Byte,
     Str,
     Unit,
+    Identifier(String),
 }
 
 #[derive(Debug)]
@@ -286,6 +288,8 @@ fn parse_constant(tokens: &mut tokenstream!()) -> Result<Constant, ParseError> {
     consume!(tokens, Assign, "Constants must have assigned values using `assign` values");
 
     let expr = parse_expr(tokens, 0)?;
+
+    consume!(tokens, Terminator, "Constants must be properly terminated");
 
     Ok(Constant {
         name,
@@ -397,6 +401,15 @@ fn parse_scope(tokens: &mut tokenstream!()) -> Result<Scope, ParseError> {
 
                 let name = ident!(tokens);
 
+                let r#type = expect_token_peek!(tokens, t, 
+                    if t.inner() == &Token::TypeSeperator {
+                        tokens.next();
+                        parse_type(tokens)?
+                    } else {
+                        return ParseError::new(t, ParseErrorReason::InvalidType, "This language is strongly typed, you have to specify a type, type deduction not yet implemented")
+                    }
+                );
+
                 consume!(tokens, Assign, "Let statements need to be followed by an assignment `=`");
                 
                 let expr = parse_expr(tokens, 0)?;
@@ -406,6 +419,7 @@ fn parse_scope(tokens: &mut tokenstream!()) -> Result<Scope, ParseError> {
                 statements.push(Stmt::Assign {
                     name,
                     mutable,
+                    r#type,
                     expr,
                 });
             },
@@ -436,7 +450,7 @@ fn parse_scope(tokens: &mut tokenstream!()) -> Result<Scope, ParseError> {
                 statements.push(Stmt::Break(Some(parse_expr(tokens, 0)?)));
                 consume!(tokens, Terminator, "Break must be terminated with `;`, as it is currently a statement");
             },
-            Token::Terminator => {super::LOG.explicit(&format!("Stray terminator `;`: {:?}", &tok)); tokens.next();}
+            Token::Terminator => {super::LOG.explicit(&format!("Stray terminator `;`: {:?}", &tok)); tokens.next();},
             _ => statements.push(Stmt::Expr(parse_expr(tokens, 0)?))
         });
     }
@@ -468,10 +482,14 @@ fn parse_expr(tokens: &mut tokenstream!(), min_bp: u8) -> Result<Expr, ParseErro
             Token::Div if min_bp < /* left-bp */ 11 => {tokens.next(); lhs = expr_binary!(Token::Div, expect_box!(lhs), expr_boxed!(tokens, /* right-bp */ 12)); continue},
             Token::Plus if min_bp < /* left-bp */ 5 => {tokens.next(); lhs = expr_binary!(Token::Plus, expect_box!(lhs), expr_boxed!(tokens, /* right-bp */ 6)); continue},
             Token::Minus if min_bp < /* left-bp */ 5 => {tokens.next(); lhs = expr_binary!(Token::Minus, expect_box!(lhs), expr_boxed!(tokens, /* right-bp */ 6)); continue},
+            Token::Assign if min_bp < /* left-bp */ 2 => {tokens.next(); lhs = expr_binary!(Token::Assign, expect_box!(lhs), expr_boxed!(tokens, /* right-bp */ 1)); continue},
+            Token::And if min_bp < /* left-bp */ 9 => {tokens.next(); lhs = expr_binary!(Token::And, expect_box!(lhs), expr_boxed!(tokens, /* right-bp */ 10)); continue},
+            Token::Or if min_bp < /* left-bp */ 7 => {tokens.next(); lhs = expr_binary!(Token::Or, expect_box!(lhs), expr_boxed!(tokens, /* right-bp */ 8)); continue},
             Token::Star => break,
             Token::Div => break,
             Token::Plus => break,
             Token::Minus => break,
+            Token::Assign => break,
             // ATOM
             lit_or_ident!() => {
                 let nlhs = token_lit_to_expr_lit!(tok);
@@ -542,6 +560,7 @@ fn parse_type<'a>(tokens: &mut tokenstream!()) -> Result<Type, ParseError> {
             consume!(tokens, ParenthesesEnd, "Tuples not yet supported");
             Ok(Type::Unit)
         },
+        Token::Identifier(s) => Ok(Type::Identifier(s.to_string())),
         _ => return ParseError::new(&t, ParseErrorReason::InvalidType, "Not a valid type")
     })
 }
