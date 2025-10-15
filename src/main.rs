@@ -7,6 +7,8 @@ use clap::Parser;
 
 mod lexer;
 mod parser;
+mod compiler;
+
 
 /// A compiler for kLang
 #[derive(Debug, Parser)]
@@ -108,6 +110,16 @@ fn main() {
 
     LOG.debug(&format!("\nParsed:\n\n{:?}\n", &ast));
 
+    let ksm = match compiler::parse_ast(ast) {
+        Ok(ksm) => ksm,
+        Err(e) => {
+            LOG.surface(&format!("{e}"));
+            std::process::exit(1);
+        }
+    };
+
+    LOG.debug(&format!("\nKSM:\n\n{:?}\n", &ksm));
+    
     todo!("Finish parsing & Compilation");
 }
 

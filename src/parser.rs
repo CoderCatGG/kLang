@@ -152,7 +152,7 @@ macro_rules! expect_lit_ident {
     };
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Stmt {
     Assembly(String),
     Expr(Expr),
@@ -168,15 +168,15 @@ pub enum Stmt {
     Break(Option<Expr>),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Function {
-    name: String,
-    input: Vec<(String, Type)>,
-    output: Type,
-    body: Scope,
+    pub name: String,
+    pub input: Vec<(String, Type)>,
+    pub output: Type,
+    pub body: Scope,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Expr {
     Call {
         name: String,
@@ -196,12 +196,12 @@ pub enum Expr {
     Lit(Lit),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Scope {
-    statements: Vec<Stmt>,
+    pub statements: Vec<Stmt>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Lit {
     I16(i16),
     I32(i32),
@@ -213,7 +213,7 @@ pub enum Lit {
     Identifier(String),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
     I16,
     I32,
@@ -226,19 +226,19 @@ pub enum Type {
     Identifier(String),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Constant {
-    name: String,
-    r#type: Type,
-    expr: Expr,
+    pub name: String,
+    pub r#type: Type,
+    pub expr: Expr,
 }
 
 #[derive(Debug)]
 pub struct AST {
-    statements: Vec<(Stmt, (usize, usize))>,
-    consts: Vec<Constant>,
-    macros: Vec<(String, Expr)>,
-    types: Vec<(String, Type)>,
+    pub functions: Vec<Function>,
+    pub consts: Vec<Constant>,
+    pub macros: Vec<(String, Expr)>,
+    pub types: Vec<(String, Type)>,
 }
 
 pub fn parse_tokens(tokens: Vec<DataToken>) -> Result<AST, ParseError> {
@@ -248,8 +248,7 @@ pub fn parse_tokens(tokens: Vec<DataToken>) -> Result<AST, ParseError> {
 }
 
 fn parse_global(tokens: &mut tokenstream!()) -> Result<AST, ParseError> {
-    let mut result: Vec<(Stmt, (usize, usize))> = Vec::new();
-
+    let mut functions: Vec<Function> = Vec::new();
     let mut consts: Vec<Constant> = Vec::new();
     let mut macros: Vec<(String, Expr)> = Vec::new();
     let mut types: Vec<(String, Type)> = Vec::new();
@@ -263,19 +262,15 @@ fn parse_global(tokens: &mut tokenstream!()) -> Result<AST, ParseError> {
                 Token::Const => consts.push(parse_constant(tokens)?),
                 Token::Macro => macros.push(parse_macro(tokens)?),
                 Token::Type => types.push(parse_type_assign(tokens)?),
-                Token::Func => result.push((Stmt::Func(parse_function(tokens)?), t.get_pos())),
+                Token::Func => functions.push(parse_function(tokens)?),
                 _ => return ParseError::new(&tokens.next().unwrap(), ParseErrorReason::UnexpectedToken, "An unexpected token in global scope, allowed tokens: `func`, `const`, `macro` and `type`")
             },
             None => break,
         }
     }
 
-    super::LOG.debug(&format!("\nGot constants: {:?}", consts));
-    super::LOG.debug(&format!("Got macros: {:?}", macros));
-    super::LOG.debug(&format!("Got types: {:?}", types));
-
     Ok(AST {
-        statements: result,
+        functions,
         consts,
         macros,
         types,
@@ -379,6 +374,8 @@ fn parse_function(tokens: &mut tokenstream!()) -> Result<Function, ParseError> {
 
     let body = parse_scope(tokens)?;
 
+    optional!(tokens, Terminator);
+
     Ok(Function {
         name,
         input: inputs,
@@ -462,7 +459,10 @@ fn parse_scope(tokens: &mut tokenstream!()) -> Result<Scope, ParseError> {
                 consume!(tokens, Terminator, "Break must be terminated with `;`, as it is currently a statement");
             },
             Token::Terminator => {super::LOG.explicit(&format!("Stray terminator `;`: {:?}", &tok)); tokens.next();},
-            _ => statements.push(Stmt::Expr(parse_expr(tokens, 0)?))
+            _ => {
+                statements.push(Stmt::Expr(parse_expr(tokens, 0)?));
+                optional!(tokens, Comma);
+            }
         });
     }
 }
