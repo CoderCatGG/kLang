@@ -248,7 +248,7 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
         let pos = (line_idx, char_idx);
         
         #[cfg(feature = "slow_dev_debugging")]
-        super::LOG.debug(&format!("Parsing char {:?}: {:?}", c, pos));
+        crate::LOG.debug(&format!("Parsing char {:?}: {:?}", c, pos));
 
         if c.is_whitespace() {
             if c == '\n' {
@@ -295,7 +295,7 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
                         chars.next();
                         break
                     } else if ca == None {
-                        super::LOG.explicit("Unclosed multiline comment at the end of the file");
+                        crate::LOG.explicit("Unclosed multiline comment at the end of the file");
                         break
                     } else {
                         char_idx += 1;
@@ -381,7 +381,7 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
                     match cs {
                         &('a'..='z') | &('A'..='Z') | &('0'..='9') | &'_' => {},
                         _ => {
-                            super::LOG.explicit(&format!("Detected single character literal (consider using a more descriptive name) at: {:?}", pos));
+                            crate::LOG.explicit(&format!("Detected single character literal (consider using a more descriptive name) at: {:?}", pos));
                             tokens.push(DataToken::new(Token::Identifier(c.to_string()), pos));
                             continue
                         }

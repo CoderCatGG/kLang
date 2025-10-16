@@ -8,7 +8,7 @@ use clap::Parser;
 mod lexer;
 mod parser;
 mod compiler;
-
+mod binary;
 
 /// A compiler for kLang
 #[derive(Debug, Parser)]
@@ -118,9 +118,23 @@ fn main() {
         }
     };
 
-    LOG.debug(&format!("\nKSM:\n\n{:?}\n", &ksm));
+    LOG.debug(&format!("\nKSM:\n\n{:#?}\n", &ksm));
     
-    todo!("Finish parsing & Compilation");
+    let binary = match binary::ksm_to_binary(ksm) {
+        Ok(bin) => bin,
+        Err(e) => {
+            LOG.surface(&format!("{e}"));
+            std::process::exit(1);
+        }
+    };
+
+    LOG.debug(&format!("\nBinary:\n\n{:?}\n", &binary));
+
+    if let Some(p) = &ARGS.output {
+        _ = fs::write(p, binary);
+    } else {
+        println!("{:?}", binary);
+    }
 }
 
 fn explanation(_: &String) -> &'static str {

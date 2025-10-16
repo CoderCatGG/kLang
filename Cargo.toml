@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 clap = { version = "4.5.48", features = ["derive"] }
+flate2 = "1.1.4"
 
 [features]
 slow_dev_debugging = []

@@ -1,6 +1,6 @@
 use std::{error::Error, fmt::Display};
-use super::lexer::{Token};
-use super::parser::{Expr, Type, Lit, AST, Scope, Stmt};
+use crate::lexer::{Token};
+use crate::parser::{Expr, Type, Lit, AST, Scope, Stmt};
 
 #[derive(Debug)]
 pub struct CompileError {
@@ -19,7 +19,7 @@ impl CompileError {
 
 impl Display for CompileError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if super::LOG.verbosity >= 2 {
+        if crate::LOG.verbosity >= 2 {
             write!(f, "Compile error: \n\n{}\n({:?})", self.descriptive, self.reason)
         } else {
             write!(f, "Compile error: {:?}", self.reason)
@@ -97,6 +97,7 @@ pub fn parse_ast(ast: AST) -> Result<KSM, CompileError> {
     flatten_to_ksm(ast)
 }
 
+
 fn flatten_to_ksm(ast: AST) -> Result<KSM, CompileError> {
     let functions = ast.functions;
     let consts_raw = ast.consts;
@@ -112,10 +113,18 @@ fn flatten_to_ksm(ast: AST) -> Result<KSM, CompileError> {
     loop {
         if let Some(func) = func_iter.next() {
             if &func.name == "main" {
-                if func.input == [] && func.output == Type::Unit {
+                let main_inp = vec![Type::Identifier("Vessel".to_string())];
+
+                for (inp_idx, inp) in func.input.iter().enumerate() {
+                    if main_inp[inp_idx] != inp.1 {
+                        return CompileError::new(CompileErrorReason::NoMainFunction, "The `main` function must have inputs `(*: Vessel)`")
+                    }
+                }
+
+                if func.output == Type::Unit {
                     main = Some(func);
                 } else {
-                    return CompileError::new(CompileErrorReason::NoMainFunction, "The `main` function must have inputs `()` (none) and outputs `()` (unit)")
+                    return CompileError::new(CompileErrorReason::NoMainFunction, "The `main` function must have output `()` (unit)")
                 }
             } else {
                 func_signatures.push((func.input.clone(), func.output.clone()));
@@ -132,8 +141,8 @@ fn flatten_to_ksm(ast: AST) -> Result<KSM, CompileError> {
         None => return CompileError::new(CompileErrorReason::NoMainFunction, "A function `name` must exist")
     };
 
-    super::LOG.debug(&format!("\nDetected function names: {:?}", func_names));
-    super::LOG.debug(&format!("Detected function signature: {:?}", func_signatures));
+    crate::LOG.debug(&format!("\nDetected function names: {:?}", func_names));
+    crate::LOG.debug(&format!("Detected function signature: {:?}", func_signatures));
 
     let mut consts = Vec::new();
 
@@ -143,10 +152,10 @@ fn flatten_to_ksm(ast: AST) -> Result<KSM, CompileError> {
         consts.push((name, lit));
     }
 
-    super::LOG.debug(&format!("Evaluated constants: {:?}", consts));
+    crate::LOG.debug(&format!("Evaluated constants: {:?}", consts));
 
     #[cfg(feature = "slow_dev_debugging")]
-    super::LOG.debug(&format!("Main function: {:?}", &main));
+    crate::LOG.debug(&format!("Main function: {:?}", &main));
 
     let mut ksm_functions = Vec::new();
     let ctx = CompileContext {

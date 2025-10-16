@@ -1,5 +1,5 @@
 use std::{error::Error, fmt::Display, hash::Hash, iter::Peekable};
-use super::lexer::{DataToken, Token};
+use crate::lexer::{DataToken, Token};
 
 #[derive(Debug)]
 pub struct ParseError {
@@ -20,7 +20,7 @@ impl ParseError {
 
 impl Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if super::LOG.verbosity >= 2 {
+        if crate::LOG.verbosity >= 2 {
             write!(f, "Parsing error token {:?}!\n\n{}\n({:?})", self.token, self.descriptive, self.reason)
         } else {
             write!(f, "Parsing error at token {:?}: {:?}", self.token, self.reason)
@@ -264,7 +264,7 @@ fn parse_global(tokens: &mut tokenstream!()) -> Result<AST, ParseError> {
 
     loop {
         #[cfg(feature = "slow_dev_debugging")]
-        super::LOG.debug(&format!("Parsing Token: {:?}", tokens.peek()));
+        crate::LOG.debug(&format!("Parsing Token: {:?}", tokens.peek()));
 
         match tokens.next() {
             Some(t) => match t.inner() {
@@ -398,7 +398,7 @@ fn parse_scope(tokens: &mut tokenstream!()) -> Result<Scope, ParseError> {
     let mut statements = Vec::new();
     loop {
         #[cfg(feature = "slow_dev_debugging")]
-        super::LOG.debug(&format!("Parsing token in scope: {:?}", tokens.peek()));
+        crate::LOG.debug(&format!("Parsing token in scope: {:?}", tokens.peek()));
 
         expect_token_peek!(tokens, tok, match tok.inner() {
             Token::BracesEnd => {tokens.next(); return Ok(Scope { statements })},
@@ -487,7 +487,7 @@ fn parse_scope(tokens: &mut tokenstream!()) -> Result<Scope, ParseError> {
 
                 statements.push(Stmt::If { id, cond, if_cond, else_cond, })
             },
-            Token::Terminator => {super::LOG.explicit(&format!("Stray terminator `;`: {:?}", &tok)); tokens.next();},
+            Token::Terminator => {crate::LOG.explicit(&format!("Stray terminator `;`: {:?}", &tok)); tokens.next();},
             _ => {
                 statements.push(Stmt::Expr(parse_expr(tokens, 0)?));
                 optional!(tokens, Comma);
@@ -498,7 +498,7 @@ fn parse_scope(tokens: &mut tokenstream!()) -> Result<Scope, ParseError> {
 
 fn parse_expr(tokens: &mut tokenstream!(), min_bp: u8) -> Result<Expr, ParseError> {
     #[cfg(feature = "slow_dev_debugging")]
-    super::LOG.debug(&format!("Expr parsing: {:?}", tokens.peek()));
+    crate::LOG.debug(&format!("Expr parsing: {:?}", tokens.peek()));
 
     let mut lhs = expect_token_peek!(tokens, tok, match tok.inner() {
         Token::ParenthesesBegin => {
@@ -537,7 +537,7 @@ fn parse_expr(tokens: &mut tokenstream!(), min_bp: u8) -> Result<Expr, ParseErro
                 tokens.next();
 
                 #[cfg(feature = "slow_dev_debugging")]
-                super::LOG.debug(&format!("Expr parsing post ident: {:?}", tokens.peek()));
+                crate::LOG.debug(&format!("Expr parsing post ident: {:?}", tokens.peek()));
 
                 expect_token_peek!(tokens, t, match t.inner() {
                     // POSTFIX OPERATORS
