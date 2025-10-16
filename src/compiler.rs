@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::{error::Error, fmt::Display};
 use super::lexer::{Token};
 use super::parser::{Expr, Type, Lit, AST, Scope, Stmt};
@@ -41,6 +40,7 @@ pub enum CompileErrorReason {
 
 #[derive(Clone, Debug)]
 pub struct KSM {
+    context: CompileContext,
     main: Vec<KSMInstructions>,
     functions: Vec<(String, Vec<KSMInstructions>)>,
 }
@@ -50,10 +50,28 @@ pub struct KSM {
 pub enum KSMInstructions {
     NOP = 0x33,
     Store(String) = 0x34,
+    Add = 0x3C,
+    Sub = 0x3D,
+    Mult = 0x3E,
+    Div = 0x3F,
+    GT = 0x41,
+    LT = 0x42,
+    GTE = 0x43,
+    LTE = 0x44,
+    EQ = 0x45,
+    NE = 0x46,
+    Negate = 0x47,
+    Bool = 0x48,
+    Not = 0x49,
+    And = 0x4A,
+    Or = 0x4B,
     Call(String) = 0x4C,
     Return = 0x4D,
     Push(KSMLit) = 0x4E,
     Eval = 0x52,
+    PseudoBranchFalseIDLabel(u64),
+    PseudoJumpIDLabel(u64),
+    PseudoIDLabel(u64),
 }
 
 #[derive(Clone, Debug)]
@@ -68,6 +86,7 @@ pub enum KSMLit {
     ArgMarker,
 }
 
+#[derive(Clone, Debug)]
 struct CompileContext {
     consts: Vec<(String, Lit)>,
     macros: Vec<(String, Expr)>,
@@ -136,34 +155,63 @@ fn flatten_to_ksm(ast: AST) -> Result<KSM, CompileError> {
         types,
     };
 
-    let main = parse_scope(main.body.clone(), &ctx)?;
+    let main = parse_scope(main.body.clone(), &ctx, 0)?;
 
     for func in functions {
         if &func.name != "main" {
-            ksm_functions.push((func.name, parse_scope(func.body, &ctx)?));
+            ksm_functions.push((func.name, parse_scope(func.body, &ctx, 0)?));
         }
     }
 
     Ok(KSM {
+        context: ctx,
         main,
         functions: ksm_functions,
     })
 }
 
-fn parse_scope(scope: Scope, ctx: &CompileContext) -> Result<Vec<KSMInstructions>, CompileError> {
+fn parse_scope(scope: Scope, ctx: &CompileContext, loop_label: u64) -> Result<Vec<KSMInstructions>, CompileError> {
     let mut result = Vec::new();
 
     for stmt in scope.statements {
         match stmt {
             Stmt::Assembly(ksm) => result.push(string_to_ksm(ksm)?),
             Stmt::Return(opt_expr) => match opt_expr {
-                Some(expr) => { result.append(&mut parse_expr(expr, ctx)?); result.push(KSMInstructions::Return); },
+                Some(expr) => { result.append(&mut parse_expr(expr, ctx, loop_label)?); result.push(KSMInstructions::Return); },
                 None => result.push(KSMInstructions::Return),
             },
-            Stmt::Expr(expr) => result.append(&mut parse_expr(expr, ctx)?),
+            Stmt::Expr(expr) => result.append(&mut parse_expr(expr, ctx, loop_label)?),
             Stmt::Assign { name, expr, .. } => {
-                result.append(&mut parse_expr(expr, ctx)?);
+                result.append(&mut parse_expr(expr, ctx, loop_label)?);
                 result.push(KSMInstructions::Store(name));
+            },
+            Stmt::Loop { id, body } => {
+                result.push(KSMInstructions::PseudoIDLabel(id));
+                result.append(&mut parse_scope(body, ctx, id)?);
+                result.push(KSMInstructions::PseudoJumpIDLabel(id));
+                result.push(KSMInstructions::PseudoIDLabel(id + 1));
+            },
+            Stmt::Break(expr) => {
+                if let Some(e) = expr {
+                    result.append(&mut parse_expr(e, ctx, loop_label)?);
+                }
+
+                result.push(KSMInstructions::PseudoJumpIDLabel(loop_label + 1));
+            },
+            Stmt::If { id, cond, if_cond, else_cond } => {
+                result.append(&mut parse_expr(cond, ctx, loop_label)?);
+                result.push(KSMInstructions::PseudoBranchFalseIDLabel(id));
+                
+                result.append(&mut parse_scope(if_cond, ctx, loop_label)?);
+                
+                if let Some(e) = else_cond {
+                    result.push(KSMInstructions::PseudoJumpIDLabel(id + 1));
+                    result.push(KSMInstructions::PseudoIDLabel(id));
+                    result.append(&mut parse_scope(e, ctx, loop_label)?);
+                    result.push(KSMInstructions::PseudoIDLabel(id + 1));
+                } else {
+                    result.push(KSMInstructions::PseudoIDLabel(id));
+                }
             },
             _ => todo!()
         }
@@ -195,12 +243,12 @@ macro_rules! lit_to_ksm_push {
     };
 }
 
-fn parse_expr(expr: Expr, ctx: &CompileContext) -> Result<Vec<KSMInstructions>, CompileError> {
+fn parse_expr(expr: Expr, ctx: &CompileContext, loop_label: u64) -> Result<Vec<KSMInstructions>, CompileError> {
     match expr {
         Expr::Var(s) => {
             for m in &ctx.macros {
                 if s == m.0 {
-                    return parse_expr(m.1.clone(), ctx)
+                    return parse_expr(m.1.clone(), ctx, loop_label)
                 }
             }
 
@@ -211,7 +259,7 @@ fn parse_expr(expr: Expr, ctx: &CompileContext) -> Result<Vec<KSMInstructions>, 
 
             result.push(KSMInstructions::Push(KSMLit::ArgMarker));
             for inp in inputs {
-                result.append(&mut parse_expr(inp, ctx)?);
+                result.append(&mut parse_expr(inp, ctx, loop_label)?);
             }
 
             result.push(KSMInstructions::Call(name));
@@ -222,7 +270,17 @@ fn parse_expr(expr: Expr, ctx: &CompileContext) -> Result<Vec<KSMInstructions>, 
             for m in &ctx.macros {
                 if let Lit::Identifier(ref s) = lit {
                     if s == &m.0 {
-                        return parse_expr(m.1.clone(), ctx)
+                        return parse_expr(m.1.clone(), ctx, loop_label)
+                    }
+                }
+            }
+
+            for c in &ctx.consts {
+                if let Lit::Identifier(ref s) = lit {
+                    if s == &c.0 {
+                        let mut imbuf = Vec::new();
+                        lit_to_ksm_push!(imbuf, c.1.clone());
+                        return Ok(imbuf)
                     }
                 }
             }
@@ -231,7 +289,50 @@ fn parse_expr(expr: Expr, ctx: &CompileContext) -> Result<Vec<KSMInstructions>, 
             lit_to_ksm_push!(imbuf, lit);
             Ok(imbuf)
         },
-        _ => todo!()
+        Expr::Scope(scope) => {
+            Ok(parse_scope(scope, ctx, loop_label)?)
+        },
+        Expr::Unary { op, expr } => {
+            let mut ksm = parse_expr(*expr, ctx, loop_label)?;
+
+            ksm.push(match op {
+                Token::Minus => KSMInstructions::Negate,
+                Token::Not => KSMInstructions::Not,
+                Token::Logical => KSMInstructions::Bool,
+                _ => return CompileError::new(CompileErrorReason::InvalidOperation, "Not a valid unary operation")
+            });
+
+            Ok(ksm)
+        },
+        Expr::Binary { op, lhs, rhs } => {
+            let mut ksm = parse_expr(*lhs.clone(), ctx, loop_label)?;
+            ksm.append(&mut parse_expr(*rhs.clone(), ctx, loop_label)?);
+
+            ksm.push(match op {
+                Token::Plus => KSMInstructions::Add,
+                Token::Minus => KSMInstructions::Sub,
+                Token::Star => KSMInstructions::Mult,
+                Token::Div => KSMInstructions::Div,
+                Token::GreaterThan => KSMInstructions::GT,
+                Token::LesserThan => KSMInstructions::LT,
+                Token::GreaterEquals => KSMInstructions::GTE,
+                Token::LesserEquals => KSMInstructions::LTE,
+                Token::And => KSMInstructions::And,
+                Token::Or => KSMInstructions::Or,
+                Token::Equals => KSMInstructions::EQ,
+                Token::NotEquals => KSMInstructions::NE,
+                Token::Assign => if let Expr::Lit(Lit::Identifier(s)) = *lhs {
+                    let mut ksm = parse_expr(*rhs.clone(), ctx, loop_label)?;
+                    ksm.push(KSMInstructions::Store(s.to_string()));
+                    return Ok(ksm)
+                } else {
+                    return CompileError::new(CompileErrorReason::InvalidOperation, "Cannot (currently) assign to non identifiers")
+                },
+                _ => return CompileError::new(CompileErrorReason::InvalidOperation, "Not a valid binary operation")
+            });
+
+            Ok(ksm)
+        },
     }
 }
 

@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::Display, iter::Peekable};
+use std::{error::Error, fmt::Display, hash::Hash, iter::Peekable};
 use super::lexer::{DataToken, Token};
 
 #[derive(Debug)]
@@ -163,9 +163,18 @@ pub enum Stmt {
         r#type: Type,
         expr: Expr,
     },
-    Loop(Scope),
+    Loop {
+        id: u64,
+        body: Scope,
+    },
     Return(Option<Expr>),
     Break(Option<Expr>),
+    If {
+        id: u64,
+        cond: Expr,
+        if_cond: Scope,
+        else_cond: Option<Scope>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -431,7 +440,7 @@ fn parse_scope(tokens: &mut tokenstream!()) -> Result<Scope, ParseError> {
                     expr,
                 });
             },
-            Token::Loop => {tokens.next(); statements.push(Stmt::Loop(parse_scope(tokens)?))},
+            Token::Loop => statements.push(Stmt::Loop { id: tok.hash(), body: { tokens.next(); parse_scope(tokens)? } }),
             Token::Return => {
                 tokens.next();
 
@@ -457,6 +466,26 @@ fn parse_scope(tokens: &mut tokenstream!()) -> Result<Scope, ParseError> {
                 );
                 statements.push(Stmt::Break(Some(parse_expr(tokens, 0)?)));
                 consume!(tokens, Terminator, "Break must be terminated with `;`, as it is currently a statement");
+            },
+            Token::If => {
+                let id = tok.hash();
+
+                tokens.next();
+
+                let cond = parse_expr(tokens, 0)?;
+                let if_cond = parse_scope(tokens)?;
+
+                let else_cond = expect_token_peek!(tokens, tok, match tok.inner() {
+                    Token::Else => {
+                        tokens.next();
+                        Some(parse_scope(tokens)?)
+                    },
+                    _ => None,
+                });
+
+                consume!(tokens, Terminator, "If ( - else) statements must be terminated with `;`, as they are currently a statement");
+
+                statements.push(Stmt::If { id, cond, if_cond, else_cond, })
             },
             Token::Terminator => {super::LOG.explicit(&format!("Stray terminator `;`: {:?}", &tok)); tokens.next();},
             _ => {

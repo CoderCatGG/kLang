@@ -1,5 +1,6 @@
 use std::fmt::Display;
 use std::error::Error;
+use std::hash::{self, Hash, Hasher};
 use std::num::{IntErrorKind, ParseFloatError, ParseIntError};
 
 #[derive(Debug)]
@@ -141,6 +142,12 @@ pub struct DataToken {
 impl DataToken {
     fn new(tok: Token, pos: (usize, usize)) -> DataToken {
         DataToken { token: tok, pos: pos }
+    }
+
+    pub fn hash(&self) -> u64 {
+        let mut hasher = hash::DefaultHasher::new();
+        self.pos.hash(&mut hasher);
+        hasher.finish()
     }
 
     pub fn null() -> DataToken {
