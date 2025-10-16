@@ -22,30 +22,30 @@ func main: (vessel: Vessel /* Vessel holds vessel data */) -> () {
     if ?hi_text { // Not worth printing if its empty
         print(hi_text);
     }
-};
+}
 ```
 
 ### Keywords
-- `func`: specifies a function or function signature
-- `let`: specifies an immutable variable
-- `const`: specifies a compile time constant, only allowed in global scope
-- `macro`: specifies a compile time macro (code replacement), only allowed in global scope
-- `mut`: marks a variable or refrence as mutable
-- `return`: returns from a function
-- `if`: if-statement
-- `else`: else-statement
-- `switch`: switch-statement
+- [x] `func`: specifies a function or function signature
+- [x] `let`: specifies an immutable variable
+- [x] `const`: specifies a compile time constant, only allowed in global scope
+- [x] `macro`: specifies a compile time macro (code replacement), only allowed in global scope
+- [ ] `mut`: marks a variable or refrence as mutable
+- [x] `return`: returns from a function
+- [x] `if`: if-statement
+- [x] `else`: else-statement
+- [ ] `switch`: switch-statement
 
 #### Type Keywords
-- `i16`
-- `i32`
-- `f32`
-- `f64`
-- `bool`
-- `byte`
-- `str`
-- `struct`
-- `enum`
+- [x] `i16`
+- [x] `i32`
+- [x] `f32`
+- [x] `f64`
+- [x] `bool`
+- [x] `byte`
+- [x] `str`
+- [ ] `struct`
+- [ ] `enum`
 
 #### Reserved Keywords
 These are reserved, there is currently no plan to implement them
@@ -54,17 +54,25 @@ These are reserved, there is currently no plan to implement them
 - `import`
 
 ### Unary Prefix Operators
-- `?`: Logical Operator, Evaluates "truthness" of another type (uses kOS's `OpcodeLogicToBool` in `src/kOS.Safe/Compilation/Opcode.cs`)
-- `&`: Refrence
-- `*`: Derefrence
-- `!`: Logical Not
-- `-`: Arithmetic Negation
+- [x] `?`: Logical Operator, Evaluates "truthness" of another type (uses kOS's `OpcodeLogicToBool` in `src/kOS.Safe/Compilation/Opcode.cs`)
+- [ ] `&`: Refrence
+- [ ] `*`: Derefrence
+- [x] `!`: Logical Not
+- [x] `-`: Arithmetic Negation
 
 ### Binary Infix Operators
-- `+`: Addition
-- `-`: Subtraction
-- `*`: Multiplication
-- `\`: Division
+- [x] `+`: Addition
+- [x] `-`: Subtraction
+- [x] `*`: Multiplication
+- [x] `\`: Division
+- [x] `&&`: Boolean And
+- [x] `||`: Boolean Or
+- [x] `==`: Equality
+- [x] `!=`: Inequality
+- [x] `>`: Greater than
+- [x] `<`: Less than
+- [x] `>=`: Greater than or equals
+- [x] `<=`: Less than or equals
 
 ### Number Literals
 Integer and byte literals may begin with `0x` to indicate hexadecimal parsing
