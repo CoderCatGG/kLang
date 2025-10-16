@@ -40,16 +40,15 @@ pub enum CompileErrorReason {
 
 #[derive(Clone, Debug)]
 pub struct KSM {
-    context: CompileContext,
-    main: Vec<KSMInstructions>,
-    functions: Vec<(String, Vec<KSMInstructions>)>,
+    pub main: Vec<KSMInstructions>,
+    pub functions: Vec<(String, Vec<KSMInstructions>)>,
 }
 
 #[repr(u8)]
 #[derive(Clone, Debug)]
 pub enum KSMInstructions {
     NOP = 0x33,
-    Store(String) = 0x34,
+    Store(KSMLit) = 0x34,
     Add = 0x3C,
     Sub = 0x3D,
     Mult = 0x3E,
@@ -65,7 +64,7 @@ pub enum KSMInstructions {
     Not = 0x49,
     And = 0x4A,
     Or = 0x4B,
-    Call(String) = 0x4C,
+    Call(KSMLit, KSMLit) = 0x4C,
     Return = 0x4D,
     Push(KSMLit) = 0x4E,
     Eval = 0x52,
@@ -76,6 +75,7 @@ pub enum KSMInstructions {
 
 #[derive(Clone, Debug)]
 pub enum KSMLit {
+    ArgIndex(usize), // NEVER WRITTEN BY PROGRAMS, THIS IS FOR THE BINARY WRITER
     I16(i16),
     I32(i32),
     F32(f32),
@@ -128,9 +128,8 @@ fn flatten_to_ksm(ast: AST) -> Result<KSM, CompileError> {
                 }
             } else {
                 func_signatures.push((func.input.clone(), func.output.clone()));
+                func_names.push(func.name.clone());
             }
-
-            func_names.push(func.name.clone());
         } else {
             break
         }
@@ -173,7 +172,6 @@ fn flatten_to_ksm(ast: AST) -> Result<KSM, CompileError> {
     }
 
     Ok(KSM {
-        context: ctx,
         main,
         functions: ksm_functions,
     })

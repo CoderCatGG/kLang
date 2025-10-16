@@ -98,7 +98,7 @@ fn main() {
         }
     };
 
-    LOG.debug(&format!("\nLexed:\n\n{:?}\n", &tokenstream));
+    LOG.debug(&format!("\nLexed:\n\n{:#?}\n", &tokenstream));
 
     let ast = match parser::parse_tokens(tokenstream) {
         Ok(ast) => ast,
@@ -108,7 +108,7 @@ fn main() {
         }
     };
 
-    LOG.debug(&format!("\nParsed:\n\n{:?}\n", &ast));
+    LOG.debug(&format!("\nParsed:\n\n{:#?}\n", &ast));
 
     let ksm = match compiler::parse_ast(ast) {
         Ok(ksm) => ksm,
