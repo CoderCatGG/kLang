@@ -36,6 +36,7 @@ pub enum CompileErrorReason {
     InvalidOperation,
     InvalidType,
     InvalidKSM,
+    InvalidLabel,
 }
 
 #[derive(Clone, Debug)]
@@ -49,6 +50,8 @@ pub struct KSM {
 pub enum KSMInstructions {
     NOP = 0x33,
     Store(KSMLit) = 0x34,
+    BranchFalse(KSMLit, KSMLit) = 0x3A,
+    Jump(KSMLit, KSMLit) = 0x3B,
     Add = 0x3C,
     Sub = 0x3D,
     Mult = 0x3E,
@@ -68,6 +71,7 @@ pub enum KSMInstructions {
     Return = 0x4D,
     Push(KSMLit) = 0x4E,
     Eval = 0x52,
+    LabelReset(KSMLit) = 0xF0,
     PseudoBranchFalseIDLabel(u64),
     PseudoJumpIDLabel(u64),
     PseudoIDLabel(u64),
@@ -91,6 +95,18 @@ struct CompileContext {
     consts: Vec<(String, Lit)>,
     macros: Vec<(String, Expr)>,
     types: Vec<(String, Type)>,
+}
+
+macro_rules! parse_for_label {
+    ($plabels:expr, $label:expr, $plabel:ident, $code:expr) => {
+        for $plabel in &$plabels {
+            if $plabel.1 == &$label {
+                $code;
+            }
+        }
+
+        return CompileError::new(CompileErrorReason::InvalidLabel, "This label was not parsed, this is an error in the compiler")
+    };
 }
 
 pub fn parse_ast(ast: AST) -> Result<KSM, CompileError> {
@@ -156,24 +172,106 @@ fn flatten_to_ksm(ast: AST) -> Result<KSM, CompileError> {
     #[cfg(feature = "slow_dev_debugging")]
     crate::LOG.debug(&format!("Main function: {:?}", &main));
 
-    let mut ksm_functions = Vec::new();
+    let mut pseudo_functions = Vec::new();
     let ctx = CompileContext {
         consts,
         macros,
         types,
     };
 
-    let main = parse_scope(main.body.clone(), &ctx, 0)?;
+    let pseudo_main = parse_scope(main.body.clone(), &ctx, 0)?;
 
     for func in functions {
         if &func.name != "main" {
-            ksm_functions.push((func.name, parse_scope(func.body, &ctx, 0)?));
+            pseudo_functions.push((func.name, parse_scope(func.body, &ctx, 0)?));
         }
     }
 
+    let mut pseudo_labels = Vec::new();
+
+    pseudo_main.iter().enumerate().for_each(|(idx, inst)| {
+        if let KSMInstructions::PseudoIDLabel(label) = inst {
+            pseudo_labels.push((idx - pseudo_labels.len(), label));
+        }
+    });
+
+    let mut main = Vec::new();
+    let mut pseudo_label_removal = 0;
+
+    'pseudo: for idx in 0..pseudo_main.len() {
+        let inst = pseudo_main[idx].clone();
+        
+        match inst {
+            KSMInstructions::PseudoIDLabel(label) => {
+                #[cfg(feature = "slow_dev_debugging")]
+                crate::LOG.debug(&format!("Found label: {:?}", &label));
+                pseudo_label_removal += 1;
+                parse_for_label!(pseudo_labels, label, pseudo_label, {continue 'pseudo});
+            },
+            KSMInstructions::PseudoJumpIDLabel(label) => {
+                #[cfg(feature = "slow_dev_debugging")]
+                crate::LOG.debug(&format!("Found jump label: {:?}", &label));
+                parse_for_label!(pseudo_labels, label, pseudo_label, {
+                    main.push(KSMInstructions::Jump(KSMLit::String("".to_string()), KSMLit::I32((pseudo_label.0 as i32) - ((idx - pseudo_label_removal) as i32))));
+                    continue 'pseudo
+                });
+            },
+            KSMInstructions::PseudoBranchFalseIDLabel(label) => {
+                #[cfg(feature = "slow_dev_debugging")]
+                crate::LOG.debug(&format!("Found branch false label: {:?}", &label));
+                parse_for_label!(pseudo_labels, label, pseudo_label, {
+                    main.push(KSMInstructions::BranchFalse(KSMLit::String("".to_string()), KSMLit::I32((pseudo_label.0 as i32) - ((idx - pseudo_label_removal) as i32))));
+                    continue 'pseudo
+                });
+            },
+            _ => main.push(inst)
+        }
+    }
+
+    let mut functions = Vec::new();
+
+    for function in pseudo_functions {
+        let pseudo_function = function.1;
+        let name = function.0;
+
+        let mut function = Vec::new();
+        let mut pseudo_label_removal = 0;
+
+        'pseudo: for idx in 0..pseudo_function.len() {
+            let inst = pseudo_function[idx].clone();
+            
+            match inst {
+                KSMInstructions::PseudoIDLabel(label) => {
+                    #[cfg(feature = "slow_dev_debugging")]
+                    crate::LOG.debug(&format!("Found label: {:?}", &label));
+                    parse_for_label!(pseudo_labels, label, pseudo_label, {continue 'pseudo});
+                },
+                KSMInstructions::PseudoJumpIDLabel(label) => {
+                    #[cfg(feature = "slow_dev_debugging")]
+                    crate::LOG.debug(&format!("Found jump label: {:?}", &label));
+                    parse_for_label!(pseudo_labels, label, pseudo_label, {
+                        function.push(KSMInstructions::Jump(KSMLit::String("".to_string()), KSMLit::I32((pseudo_label.0 as i32) - ((idx - pseudo_label_removal) as i32))));
+                        continue 'pseudo
+                    });
+                },
+                KSMInstructions::PseudoBranchFalseIDLabel(label) => {
+                    #[cfg(feature = "slow_dev_debugging")]
+                    crate::LOG.debug(&format!("Found branch false label: {:?}", &label));
+                    parse_for_label!(pseudo_labels, label, pseudo_label, {
+                        function.push(KSMInstructions::BranchFalse(KSMLit::String("".to_string()), KSMLit::I32((pseudo_label.0 as i32) - ((idx - pseudo_label_removal) as i32))));
+                        continue 'pseudo
+                    });
+                },
+                _ => function.push(inst)
+            }
+        }
+
+        functions.push((name, function));
+    }
+
     Ok(KSM {
-        main,
-        functions: ksm_functions,
+        main: main,
+        functions: functions,
     })
 }
 
@@ -190,7 +288,7 @@ fn parse_scope(scope: Scope, ctx: &CompileContext, loop_label: u64) -> Result<Ve
             Stmt::Expr(expr) => result.append(&mut parse_expr(expr, ctx, loop_label)?),
             Stmt::Assign { name, expr, .. } => {
                 result.append(&mut parse_expr(expr, ctx, loop_label)?);
-                result.push(KSMInstructions::Store(name));
+                result.push(KSMInstructions::Store(KSMLit::String(name)));
             },
             Stmt::Loop { id, body } => {
                 result.push(KSMInstructions::PseudoIDLabel(id));
@@ -250,6 +348,12 @@ macro_rules! lit_to_ksm_push {
     };
 }
 
+macro_rules! push_builtin {
+    ($s:ident, $name:expr) => {
+        $s.push(KSMInstructions::Call(KSMLit::String("".to_string()), KSMLit::String($name.to_string())))
+    };
+}
+
 fn parse_expr(expr: Expr, ctx: &CompileContext, loop_label: u64) -> Result<Vec<KSMInstructions>, CompileError> {
     match expr {
         Expr::Var(s) => {
@@ -268,9 +372,51 @@ fn parse_expr(expr: Expr, ctx: &CompileContext, loop_label: u64) -> Result<Vec<K
             for inp in inputs {
                 result.append(&mut parse_expr(inp, ctx, loop_label)?);
             }
-
-            result.push(KSMInstructions::Call(name));
             
+            match name.as_str() {
+                "print" => push_builtin!(result, "print"),
+                "print_pos" => push_builtin!(result, "printat"),
+                "set_flybywire" => push_builtin!(result, "toggleflybywire"),
+                "set_autopilot" => push_builtin!(result, "selectautopilotmode"),
+                "log" => push_builtin!(result, "logfile"),
+                "reboot" => push_builtin!(result, "reboot"),
+                "shutdown" => push_builtin!(result, "shutdown"),
+                "memdump" => push_builtin!(result, "debugdump"),
+                "profile" => push_builtin!(result, "profileresult"),
+                "droppriority" => push_builtin!(result, "droppriority"),
+                "abs" => push_builtin!(result, "abs"),
+                "mod" => push_builtin!(result, "mod"),
+                "floor" => push_builtin!(result, "floor"),
+                "ceil" => push_builtin!(result, "ceiling"),
+                "round" => push_builtin!(result, "round"),
+                "sqrt" => push_builtin!(result, "sqrt"),
+                "ln" => push_builtin!(result, "ln"),
+                "log_10" => push_builtin!(result, "log10"),
+                "min" => push_builtin!(result, "min"),
+                "max" => push_builtin!(result, "max"),
+                "rand" => push_builtin!(result, "random"),
+                "rand_seed" => push_builtin!(result, "randomseed"),
+                "stringify" => push_builtin!(result, "char"),
+                "parse" => push_builtin!(result, "unchar"),
+                "change_dev" => push_builtin!(result, "switch"),
+                "cd" => push_builtin!(result, "cd"),
+                "copy_path" => push_builtin!(result, "copypath"),
+                "move_path" => push_builtin!(result, "movepath"),
+                "delete_path" => push_builtin!(result, "deletepath"),
+                "write_json" => push_builtin!(result, "writejson"),
+                "read_json" => push_builtin!(result, "readjson"),
+                "range" => push_builtin!(result, "range"),
+                "sin" => push_builtin!(result, "sin"),
+                "cos" => push_builtin!(result, "cos"),
+                "tan" => push_builtin!(result, "tan"),
+                "arcsin" => push_builtin!(result, "arcsin"),
+                "arccos" => push_builtin!(result, "arccos"),
+                "arctan" => push_builtin!(result, "arctan"),
+                "arctan2" => push_builtin!(result, "arctan2"),
+                "angle_diff" => push_builtin!(result, "anglediff"),
+                _ => result.push(KSMInstructions::Call(KSMLit::String(name), KSMLit::String("".to_string())))
+            }
+
             Ok(result)
         },
         Expr::Lit(lit) => {
@@ -330,7 +476,7 @@ fn parse_expr(expr: Expr, ctx: &CompileContext, loop_label: u64) -> Result<Vec<K
                 Token::NotEquals => KSMInstructions::NE,
                 Token::Assign => if let Expr::Lit(Lit::Identifier(s)) = *lhs {
                     let mut ksm = parse_expr(*rhs.clone(), ctx, loop_label)?;
-                    ksm.push(KSMInstructions::Store(s.to_string()));
+                    ksm.push(KSMInstructions::Store(KSMLit::String(s.to_string())));
                     return Ok(ksm)
                 } else {
                     return CompileError::new(CompileErrorReason::InvalidOperation, "Cannot (currently) assign to non identifiers")
