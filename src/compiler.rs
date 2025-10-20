@@ -244,6 +244,7 @@ fn flatten_to_ksm(ast: AST) -> Result<KSM, CompileError> {
                 KSMInstructions::PseudoIDLabel(label) => {
                     #[cfg(feature = "slow_dev_debugging")]
                     crate::LOG.debug(&format!("Found label: {:?}", &label));
+                    pseudo_label_removal += 1;
                     parse_for_label!(pseudo_labels, label, pseudo_label, {continue 'pseudo});
                 },
                 KSMInstructions::PseudoJumpIDLabel(label) => {
@@ -349,9 +350,12 @@ macro_rules! lit_to_ksm_push {
 }
 
 macro_rules! push_builtin {
-    ($s:ident, $name:expr) => {
+    ($s:ident, $name:expr) => {{
+        #[cfg(feature = "slow_dev_debugging")]
+        super::LOG.debug(&format!("Call to kOS function: {:?}", &$name));
+
         $s.push(KSMInstructions::Call(KSMLit::String("".to_string()), KSMLit::String($name.to_string())))
-    };
+    }};
 }
 
 fn parse_expr(expr: Expr, ctx: &CompileContext, loop_label: u64) -> Result<Vec<KSMInstructions>, CompileError> {
