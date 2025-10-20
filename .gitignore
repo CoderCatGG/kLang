@@ -20,5 +20,8 @@ example/*-test.kLang
 # helper scripts for testing
 helper
 
+# custom scripts
+scripts
+
 # old versions of the lexer/parser, to varying success
 src/**/*-old.rs

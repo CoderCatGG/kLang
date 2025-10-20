@@ -79,82 +79,111 @@ pub fn ksm_to_binary(ksm: KSM) -> Result<Vec<u8>, BinaryError> {
     Ok(encoded)
 }
 
-fn parse_ksm(mut ksm: KSM) -> Result<Vec<u8>, BinaryError> {
+fn parse_ksm(ksm: KSM) -> Result<Vec<u8>, BinaryError> {
+    let ksm_main = ksm.main;
+    let ksm_functions = ksm.functions;
+
     let mut code = vec![b'k', b'\x03', b'X', b'E'];
 
     let mut args = vec![b'%', b'A', b'\x00' /* To be filled later, this is `numArgIndexBytes` */];
 
-    for ref mut inst in &mut ksm.main {
+    let mut new_main = Vec::new();
+
+    for inst in ksm_main {
+        #[cfg(feature = "slow_dev_debugging")]
+        super::LOG.debug(&format!("Main code arg parsing: {:?}", &inst));
+
         match inst {
             KSMInstructions::Push(lit) => {
                 let idx = args.len();
                 args.append(&mut to_bin(&lit));
-                **inst = KSMInstructions::Push(KSMLit::ArgIndex(idx));
+                new_main.push(KSMInstructions::Push(KSMLit::ArgIndex(idx)));
             },
             KSMInstructions::Store(lit) => {
                 let idx = args.len();
                 args.append(&mut to_bin(&lit));
-                **inst = KSMInstructions::Store(KSMLit::ArgIndex(idx));
+                new_main.push(KSMInstructions::Store(KSMLit::ArgIndex(idx)));
             },
             KSMInstructions::Jump(lit1, lit2) => {
                 let idx1 = args.len();
                 args.append(&mut to_bin(&lit1));
                 let idx2 = args.len();
                 args.append(&mut to_bin(&lit2));
-                **inst = KSMInstructions::Jump(KSMLit::ArgIndex(idx1), KSMLit::ArgIndex(idx2));
+                new_main.push(KSMInstructions::Jump(KSMLit::ArgIndex(idx1), KSMLit::ArgIndex(idx2)));
             },
             KSMInstructions::BranchFalse(lit1, lit2) => {
                 let idx1 = args.len();
                 args.append(&mut to_bin(&lit1));
                 let idx2 = args.len();
                 args.append(&mut to_bin(&lit2));
-                **inst = KSMInstructions::BranchFalse(KSMLit::ArgIndex(idx1), KSMLit::ArgIndex(idx2));
+                new_main.push(KSMInstructions::BranchFalse(KSMLit::ArgIndex(idx1), KSMLit::ArgIndex(idx2)));
             },
             KSMInstructions::Call(lit1, lit2) => {
                 let idx1 = args.len();
                 args.append(&mut to_bin(&lit1));
                 let idx2 = args.len();
                 args.append(&mut to_bin(&lit2));
-                **inst = KSMInstructions::Call(KSMLit::ArgIndex(idx1), KSMLit::ArgIndex(idx2));
+                new_main.push(KSMInstructions::Call(KSMLit::ArgIndex(idx1), KSMLit::ArgIndex(idx2)));
             },
             _ => {}
         }
     }
 
-    let mut func_name_idx = Vec::new();
-    let mut tmp_ksm_functions = ksm.functions.clone();
+    let ksm_main = new_main;
 
-    for &mut (ref func_name, ref mut func_inst) in &mut tmp_ksm_functions {
-        func_name_idx.push((args.len(), func_name));
+    let mut func_name_idx = Vec::new();
+    let mut new_functions = Vec::new();
+
+    for (func_name, func_inst) in ksm_functions {
+        func_name_idx.push((args.len(), func_name.clone()));
         args.append(&mut to_bin(&KSMLit::String(func_name.to_string())));
+
+        let mut new_func_code = Vec::new();
+
         for ref mut inst in func_inst {
+            #[cfg(feature = "slow_dev_debugging")]
+            super::LOG.debug(&format!("Func ({:?}) arg parsing: {:?}", &func_name, &inst));
+
             match inst {
                 KSMInstructions::Push(lit) => {
                     let idx = args.len();
                     args.append(&mut to_bin(&lit));
-                    **inst = KSMInstructions::Push(KSMLit::ArgIndex(idx));
+                    new_func_code.push(KSMInstructions::Push(KSMLit::ArgIndex(idx)));
                 },
                 KSMInstructions::Store(lit) => {
                     let idx = args.len();
                     args.append(&mut to_bin(&lit));
-                    **inst = KSMInstructions::Store(KSMLit::ArgIndex(idx));
+                    new_func_code.push(KSMInstructions::Store(KSMLit::ArgIndex(idx)));
                 },
                 KSMInstructions::Jump(lit1, lit2) => {
-                    let idx = args.len();
+                    let idx1 = args.len();
                     args.append(&mut to_bin(&lit1));
+                    let idx2 = args.len();
                     args.append(&mut to_bin(&lit2));
-                    **inst = KSMInstructions::Jump(KSMLit::ArgIndex(idx), KSMLit::ArgIndex(idx + 1));
+                    new_func_code.push(KSMInstructions::Jump(KSMLit::ArgIndex(idx1), KSMLit::ArgIndex(idx2)));
                 },
                 KSMInstructions::BranchFalse(lit1, lit2) => {
-                    let idx = args.len();
+                    let idx1 = args.len();
                     args.append(&mut to_bin(&lit1));
+                    let idx2 = args.len();
                     args.append(&mut to_bin(&lit2));
-                    **inst = KSMInstructions::BranchFalse(KSMLit::ArgIndex(idx), KSMLit::ArgIndex(idx + 1));
+                    new_func_code.push(KSMInstructions::BranchFalse(KSMLit::ArgIndex(idx1), KSMLit::ArgIndex(idx2)));
+                },
+                KSMInstructions::Call(lit1, lit2) => {
+                    let idx1 = args.len();
+                    args.append(&mut to_bin(&lit1));
+                    let idx2 = args.len();
+                    args.append(&mut to_bin(&lit2));
+                    new_func_code.push(KSMInstructions::Call(KSMLit::ArgIndex(idx1), KSMLit::ArgIndex(idx2)));
                 },
                 _ => {}
             }
         }
+
+        new_functions.push((func_name.clone(), new_func_code));
     }
+
+    let ksm_functions = new_functions;
 
     let num_arg_index_bytes: u8 = match args.len() {
         0 => 0x00,
@@ -171,13 +200,19 @@ fn parse_ksm(mut ksm: KSM) -> Result<Vec<u8>, BinaryError> {
     super::LOG.debug(&format!("ARGS: {args:?}"));
 
     #[cfg(feature = "slow_dev_debugging")]
-    super::LOG.debug(&format!("Main code after arg parsing: {:?}", &ksm.main));
+    super::LOG.debug(&format!("Main code after arg parsing: {:?}", &ksm_main));
+
+    #[cfg(feature = "slow_dev_debugging")]
+    super::LOG.debug(&format!("Funcs after arg parsing: {:?}", &ksm_functions));
 
     code.append(&mut args);
 
     let mut main_code = vec![b'%', b'M'];
 
-    for inst in ksm.main {
+    for inst in ksm_main {
+        #[cfg(feature = "slow_dev_debugging")]
+        super::LOG.debug(&format!("Parsing main instruction: {:?}", &inst));
+
         match inst {
             KSMInstructions::NOP => main_code.push(b'\x33'),
             KSMInstructions::Add => main_code.push(b'\x3C'),
@@ -226,12 +261,12 @@ fn parse_ksm(mut ksm: KSM) -> Result<Vec<u8>, BinaryError> {
 
     let mut func_code = vec![b'%', b'F'];
 
-    for (func_name, func_inst) in ksm.functions {
+    for (func_name, func_inst) in ksm_functions {
         func_code.push(b'\xF0');
         func_code.append(&mut {
             let mut i = 0;
             for (idx, name) in &func_name_idx {
-                if name == &&func_name {
+                if name == &func_name {
                     i = *idx;
                 }
             }
@@ -253,6 +288,9 @@ fn parse_ksm(mut ksm: KSM) -> Result<Vec<u8>, BinaryError> {
         });
 
         for inst in func_inst {
+            #[cfg(feature = "slow_dev_debugging")]
+            super::LOG.debug(&format!("Parsing function ({:?}) instruction: {:?}", &func_name, &inst));
+
             match inst {
                 KSMInstructions::NOP => func_code.push(b'\x33'),
                 KSMInstructions::Add => func_code.push(b'\x3C'),
