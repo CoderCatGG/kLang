@@ -97,22 +97,25 @@ fn parse_ksm(mut ksm: KSM) -> Result<Vec<u8>, BinaryError> {
                 **inst = KSMInstructions::Store(KSMLit::ArgIndex(idx));
             },
             KSMInstructions::Jump(lit1, lit2) => {
-                let idx = args.len();
+                let idx1 = args.len();
                 args.append(&mut to_bin(&lit1));
+                let idx2 = args.len();
                 args.append(&mut to_bin(&lit2));
-                **inst = KSMInstructions::Jump(KSMLit::ArgIndex(idx), KSMLit::ArgIndex(idx + 1));
+                **inst = KSMInstructions::Jump(KSMLit::ArgIndex(idx1), KSMLit::ArgIndex(idx2));
             },
             KSMInstructions::BranchFalse(lit1, lit2) => {
-                let idx = args.len();
+                let idx1 = args.len();
                 args.append(&mut to_bin(&lit1));
+                let idx2 = args.len();
                 args.append(&mut to_bin(&lit2));
-                **inst = KSMInstructions::BranchFalse(KSMLit::ArgIndex(idx), KSMLit::ArgIndex(idx + 1));
+                **inst = KSMInstructions::BranchFalse(KSMLit::ArgIndex(idx1), KSMLit::ArgIndex(idx2));
             },
             KSMInstructions::Call(lit1, lit2) => {
-                let idx = args.len();
+                let idx1 = args.len();
                 args.append(&mut to_bin(&lit1));
+                let idx2 = args.len();
                 args.append(&mut to_bin(&lit2));
-                **inst = KSMInstructions::Call(KSMLit::ArgIndex(idx), KSMLit::ArgIndex(idx + 1));
+                **inst = KSMInstructions::Call(KSMLit::ArgIndex(idx1), KSMLit::ArgIndex(idx2));
             },
             _ => {}
         }
