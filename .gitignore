@@ -22,6 +22,7 @@ helper
 
 # custom scripts
 scripts
+script-dir
 
 # old versions of the lexer/parser, to varying success
 src/**/*-old.rs

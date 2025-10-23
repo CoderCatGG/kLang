@@ -169,6 +169,7 @@ pub enum Stmt {
     },
     Return(Option<Expr>),
     Break(Option<Expr>),
+    Continue,
     If {
         id: u64,
         cond: Expr,
@@ -467,6 +468,7 @@ fn parse_scope(tokens: &mut tokenstream!()) -> Result<Scope, ParseError> {
                 statements.push(Stmt::Break(Some(parse_expr(tokens, 0)?)));
                 consume!(tokens, Terminator, "Break must be terminated with `;`, as it is currently a statement");
             },
+            Token::Continue => statements.push(Stmt::Continue),
             Token::If => {
                 let id = tok.hash();
 

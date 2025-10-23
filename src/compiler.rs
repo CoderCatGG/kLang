@@ -159,25 +159,25 @@ fn flatten_to_ksm(ast: AST) -> Result<KSM, CompileError> {
     crate::LOG.debug(&format!("\nDetected function names: {:?}", func_names));
     crate::LOG.debug(&format!("Detected function signature: {:?}", func_signatures));
 
-    let mut consts = Vec::new();
+    let consts = Vec::new();
+    let mut ctx = CompileContext {
+        consts,
+        macros,
+        types,
+    };
 
     for c in consts_raw {
         let name = c.name;
-        let lit = eval_expr(c.expr)?;
-        consts.push((name, lit));
+        let lit = eval_expr(c.expr, &ctx)?;
+        ctx.consts.push((name, lit));
     }
 
-    crate::LOG.debug(&format!("Evaluated constants: {:?}", consts));
+    crate::LOG.debug(&format!("Evaluated constants: {:?}", ctx.consts));
 
     #[cfg(feature = "slow_dev_debugging")]
     crate::LOG.debug(&format!("Main function: {:?}", &main));
 
     let mut pseudo_functions = Vec::new();
-    let ctx = CompileContext {
-        consts,
-        macros,
-        types,
-    };
 
     let pseudo_main = parse_scope(main.body.clone(), &ctx, 0)?;
 
@@ -304,6 +304,7 @@ fn parse_scope(scope: Scope, ctx: &CompileContext, loop_label: u64) -> Result<Ve
 
                 result.push(KSMInstructions::PseudoJumpIDLabel(loop_label + 1));
             },
+            Stmt::Continue => result.push(KSMInstructions::PseudoJumpIDLabel(loop_label)),
             Stmt::If { id, cond, if_cond, else_cond } => {
                 result.append(&mut parse_expr(cond, ctx, loop_label)?);
                 result.push(KSMInstructions::PseudoBranchFalseIDLabel(id));
@@ -329,7 +330,7 @@ fn parse_scope(scope: Scope, ctx: &CompileContext, loop_label: u64) -> Result<Ve
 fn string_to_ksm(ksm: String) -> Result<KSMInstructions, CompileError> {
     let ksm_sep = ksm.split(' ').collect::<Vec<_>>();
     let (inst, args) = ksm_sep.split_at(1);
-    match inst {
+    match inst[0] {
         _ => CompileError::new(CompileErrorReason::InvalidKSM, "The instruction wasnt a valid ksm opcode")
     }
 }
@@ -533,11 +534,11 @@ macro_rules! match_lhs_rhs_bool {
     };
 }
 
-fn eval_expr(expr: Expr) -> Result<Lit, CompileError> {
+fn eval_expr(expr: Expr, ctx: &CompileContext) -> Result<Lit, CompileError> {
     match expr {
         Expr::Lit(l) => Ok(l),
         Expr::Unary { op, expr } => {
-            let v = eval_expr(*expr)?;
+            let v = eval_expr(*expr, ctx)?;
             match op {
                 Token::Minus => match v {
                     Lit::I16(v) => Ok(Lit::I16(-v)),
@@ -554,8 +555,8 @@ fn eval_expr(expr: Expr) -> Result<Lit, CompileError> {
             }
         },
         Expr::Binary { op, lhs, rhs } => {
-            let lhs = eval_expr(*lhs)?;
-            let rhs = eval_expr(*rhs)?;
+            let lhs = eval_expr(*lhs, ctx)?;
+            let rhs = eval_expr(*rhs, ctx)?;
             match op {
                 Token::Plus  => match_lhs_rhs_math!(lhs, rhs, l, r, l + r),
                 Token::Minus => match_lhs_rhs_math!(lhs, rhs, l, r, l - r),

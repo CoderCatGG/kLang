@@ -118,6 +118,7 @@ pub enum Token {
     Enum,
     Dot,
     Comma,
+    Path,
     If,
     Else,
     Switch,
@@ -125,6 +126,7 @@ pub enum Token {
     Loop,
     Return,
     Break,
+    Continue,
     Async,
     Import,
     Identifier(String),
@@ -154,6 +156,7 @@ impl DataToken {
         DataToken { token: Token::EOF, pos: (0, 0) }
     }
 
+    #[allow(dead_code)]
     pub fn get_pos(&self) -> (usize, usize) {
         self.pos
     }
@@ -234,6 +237,27 @@ macro_rules! handle_float_conversion {
     };
 }
 
+macro_rules! handle_inferred {
+    ($buf:expr, $c:ident, $f:expr, $s:ident, $p:expr, $flow:stmt) => {
+        if let Some(ct) = $c.peek() {
+            match ct {
+                '0'..='9' | '_' | '.' if $f => {},
+                '0'..='9' | '_' => {},
+                _ => {
+                    if $f {
+                        let v = LexError::from_parsef($p, $buf.parse::<f64>())?;
+                        $s.push(DataToken::new(Token::LitF64(v), $p))
+                    } else {
+                        let v = LexError::from_parse($p, i32::from_str_radix(&$buf, 10))?;
+                        $s.push(DataToken::new(Token::LitI32(v), $p))
+                    }
+                    $flow
+                }
+            }
+        }
+    };
+}
+
 pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
     let mut tokens = Vec::new();
 
@@ -271,7 +295,6 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
             '.' => push!(Token::Dot, tokens, pos),
             ',' => push!(Token::Comma, tokens, pos),
             '?' => push!(Token::Logical, tokens, pos),
-            ':' => push!(Token::TypeSeperator, tokens, pos),
             '$' => push!(Token::Quote, tokens, pos),
             '=' => push_conditional!('=', Equals, Assign, chars, tokens, pos, char_idx),
             '!' => push_conditional!('=', NotEquals, Not, chars, tokens, pos, char_idx),
@@ -280,6 +303,7 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
             '-' => push_conditional!('>', OutputSpecifier, Minus, chars, tokens, pos, char_idx),
             '&' => push_conditional!('&', And, Ref, chars, tokens, pos, char_idx),
             '|' => push_conditional!('|', Or, Bar, chars, tokens, pos, char_idx),
+            ':' => push_conditional!(':', Path, TypeSeperator, chars, tokens, pos, char_idx),
             '/' => if chars.peek() == Some(&'/') {
                 let mut ca = Some('/');
                 while ca != Some('\n') && ca != None {ca = chars.next()};
@@ -322,19 +346,23 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
                     }
 
                     handle_int_byte_conversion!(buf, 16, chars, tokens, pos, char_idx, break);
+                    // handle_inferred!(buf, chars, false, tokens, pos, break);
                 }
             } else {
                 let mut buf = String::from(c);
+                let mut float = false;
 
                 handle_int_byte_conversion!(buf, 10, chars, tokens, pos, char_idx, continue);
                 handle_float_conversion!(buf, chars, tokens, pos, char_idx, continue);
+                // handle_inferred!(buf, chars, float, tokens, pos, continue);
 
                 while let Some(cs) = chars.next() {
                     char_idx += 1;
                     if cs.is_ascii_digit() {
                         buf.push(cs)
                     } else if cs == '_' {
-                    } else if cs == '.' {
+                    } else if cs == '.' && !float {
+                        float = true;
                         buf.push('.')
                     } else if cs == ';' {
                         return LexError::new(pos, LexErrorReason::LiteralTypeSpecifierMissing)
@@ -344,6 +372,7 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
 
                     handle_int_byte_conversion!(buf, 10, chars, tokens, pos, char_idx, break);
                     handle_float_conversion!(buf, chars, tokens, pos, char_idx, break);
+                    // handle_inferred!(buf, chars, float, tokens, pos, break);
                 }
             },
             '"' => if let Some(cr) = chars.next() {
@@ -424,6 +453,7 @@ pub fn lex_string(inp_str: String) -> Result<Vec<DataToken>, LexError> {
                     "loop" => push!(Token::Loop, tokens, pos),
                     "return" => push!(Token::Return, tokens, pos),
                     "break" => push!(Token::Break, tokens, pos),
+                    "continue" => push!(Token::Continue, tokens, pos),
                     "async" => push!(Token::Async, tokens, pos),
                     "import" => push!(Token::Import, tokens, pos),
                     _ => push!(Token::Identifier(buf), tokens, pos)

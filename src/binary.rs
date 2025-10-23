@@ -44,9 +44,51 @@ pub enum BinaryErrorReason {
 }
 
 macro_rules! check_and_index {
-    ($lits:expr, $s:ident, ) => {
-        
-    };
+    ($lit:expr, $args:ident) => {{
+        let mut bin_lit = to_bin(&$lit);
+        let bin_len = bin_lit.len();
+
+        let mut match_count = 0;
+        let mut pos = None;
+        for idx in 0..$args.len() {
+            let arg = $args[idx];
+
+            #[cfg(feature = "slow_dev_debugging")]
+            super::LOG.debug(&format!("Parsing to arg index, arg byte: {arg}, bin byte: {}, matching {match_count}, pos: {pos:?}", bin_lit[match_count]));
+
+            if arg == bin_lit[match_count] {
+                if pos == None {
+                    pos = Some(idx);
+                }
+
+                match_count += 1;
+
+                if match_count >= bin_len {
+                    break
+                }
+            } else {
+                pos = None;
+                match_count = 0;
+            }
+        }
+
+        #[cfg(feature = "slow_dev_debugging")]
+        super::LOG.debug(&format!("Parsing {:?}, found instance at {pos:?} with matching {:?}/{:?}", $lit, match_count, bin_lit.len()));
+
+        if let Some(pos) = pos {
+            if match_count == bin_len {
+                KSMLit::ArgIndex(pos)
+            } else {
+                let pos = $args.len();
+                $args.append(&mut bin_lit);
+                KSMLit::ArgIndex(pos)
+            }
+        } else {
+            let pos = $args.len();
+            $args.append(&mut bin_lit);
+            KSMLit::ArgIndex(pos)
+        }
+    }};
 }
 
 macro_rules! get_idx {
@@ -95,35 +137,19 @@ fn parse_ksm(ksm: KSM) -> Result<Vec<u8>, BinaryError> {
 
         match inst {
             KSMInstructions::Push(lit) => {
-                let idx = args.len();
-                args.append(&mut to_bin(&lit));
-                new_main.push(KSMInstructions::Push(KSMLit::ArgIndex(idx)));
+                new_main.push(KSMInstructions::Push(check_and_index!(lit, args)));
             },
             KSMInstructions::Store(lit) => {
-                let idx = args.len();
-                args.append(&mut to_bin(&lit));
-                new_main.push(KSMInstructions::Store(KSMLit::ArgIndex(idx)));
+                new_main.push(KSMInstructions::Store(check_and_index!(lit, args)));
             },
             KSMInstructions::Jump(lit1, lit2) => {
-                let idx1 = args.len();
-                args.append(&mut to_bin(&lit1));
-                let idx2 = args.len();
-                args.append(&mut to_bin(&lit2));
-                new_main.push(KSMInstructions::Jump(KSMLit::ArgIndex(idx1), KSMLit::ArgIndex(idx2)));
+                new_main.push(KSMInstructions::Jump(check_and_index!(lit1, args), check_and_index!(lit2, args)));
             },
             KSMInstructions::BranchFalse(lit1, lit2) => {
-                let idx1 = args.len();
-                args.append(&mut to_bin(&lit1));
-                let idx2 = args.len();
-                args.append(&mut to_bin(&lit2));
-                new_main.push(KSMInstructions::BranchFalse(KSMLit::ArgIndex(idx1), KSMLit::ArgIndex(idx2)));
+                new_main.push(KSMInstructions::BranchFalse(check_and_index!(lit1, args), check_and_index!(lit2, args)));
             },
             KSMInstructions::Call(lit1, lit2) => {
-                let idx1 = args.len();
-                args.append(&mut to_bin(&lit1));
-                let idx2 = args.len();
-                args.append(&mut to_bin(&lit2));
-                new_main.push(KSMInstructions::Call(KSMLit::ArgIndex(idx1), KSMLit::ArgIndex(idx2)));
+                new_main.push(KSMInstructions::Call(check_and_index!(lit1, args), check_and_index!(lit2, args)));
             },
             _ => {}
         }
@@ -146,35 +172,19 @@ fn parse_ksm(ksm: KSM) -> Result<Vec<u8>, BinaryError> {
 
             match inst {
                 KSMInstructions::Push(lit) => {
-                    let idx = args.len();
-                    args.append(&mut to_bin(&lit));
-                    new_func_code.push(KSMInstructions::Push(KSMLit::ArgIndex(idx)));
+                    new_func_code.push(KSMInstructions::Push(check_and_index!(lit, args)));
                 },
                 KSMInstructions::Store(lit) => {
-                    let idx = args.len();
-                    args.append(&mut to_bin(&lit));
-                    new_func_code.push(KSMInstructions::Store(KSMLit::ArgIndex(idx)));
+                    new_func_code.push(KSMInstructions::Store(check_and_index!(lit, args)));
                 },
                 KSMInstructions::Jump(lit1, lit2) => {
-                    let idx1 = args.len();
-                    args.append(&mut to_bin(&lit1));
-                    let idx2 = args.len();
-                    args.append(&mut to_bin(&lit2));
-                    new_func_code.push(KSMInstructions::Jump(KSMLit::ArgIndex(idx1), KSMLit::ArgIndex(idx2)));
+                    new_func_code.push(KSMInstructions::Jump(check_and_index!(lit1, args), check_and_index!(lit2, args)));
                 },
                 KSMInstructions::BranchFalse(lit1, lit2) => {
-                    let idx1 = args.len();
-                    args.append(&mut to_bin(&lit1));
-                    let idx2 = args.len();
-                    args.append(&mut to_bin(&lit2));
-                    new_func_code.push(KSMInstructions::BranchFalse(KSMLit::ArgIndex(idx1), KSMLit::ArgIndex(idx2)));
+                    new_func_code.push(KSMInstructions::BranchFalse(check_and_index!(lit1, args), check_and_index!(lit2, args)));
                 },
                 KSMInstructions::Call(lit1, lit2) => {
-                    let idx1 = args.len();
-                    args.append(&mut to_bin(&lit1));
-                    let idx2 = args.len();
-                    args.append(&mut to_bin(&lit2));
-                    new_func_code.push(KSMInstructions::Call(KSMLit::ArgIndex(idx1), KSMLit::ArgIndex(idx2)));
+                    new_func_code.push(KSMInstructions::Call(check_and_index!(lit1, args), check_and_index!(lit2, args)));
                 },
                 _ => {}
             }
